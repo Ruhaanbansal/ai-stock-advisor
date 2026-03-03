@@ -1,132 +1,115 @@
-# AI-Powered Stock Investment Decision System
+# 📈 AI-Powered Stock Advisory System
 
-An end-to-end machine learning pipeline that integrates **time-series feature engineering, multi-class trend prediction, explainable AI (SHAP), and quantitative risk modeling** to generate intelligent **Buy / Hold / Sell recommendations** for NSE-listed stocks.
-
----
-
-## 🚀 Project Overview
-
-This project builds a data-driven stock advisory system that:
-
-* Collects 5 years of historical NSE stock data
-* Engineers technical and statistical features
-* Predicts 5-day future market direction
-* Explains model decisions using SHAP
-* Computes risk metrics (Volatility & Sharpe Ratio)
-* Generates actionable investment recommendations
-
-The system simulates a simplified **AI-powered robo-advisor**.
+An end-to-end quantitative machine learning system that integrates **time-series feature engineering, multi-class trend prediction (XGBoost), SHAP explainability, and quantitative risk modeling** to generate intelligent **Buy / Hold / Sell recommendations** for NSE-listed stocks.
 
 ---
 
-## 🏗️ System Architecture
+## 🔎 Problem Statement
 
-```
-Yahoo Finance Data
-        ↓
-Data Cleaning
-        ↓
-Feature Engineering
-        ↓
-Target Creation (5-Day Future Trend)
-        ↓
-Chronological Train/Test Split
-        ↓
-Model Training (Random Forest & XGBoost)
-        ↓
-Model Evaluation
-        ↓
-SHAP Explainability
-        ↓
-Risk Scoring
-        ↓
-Buy / Hold / Sell Recommendation Engine
-```
+Financial markets are noisy, non-linear, and risk-sensitive.
+The goal of this project is to design a structured ML pipeline that:
+
+* Predicts 5-day future stock direction
+* Quantifies investment risk
+* Provides interpretable model explanations
+* Outputs actionable investment decisions
 
 ---
 
-## 📊 Features Engineered
+## 🧠 Core Contributions
 
-### 📈 Momentum Indicators
+✔ Built time-series aware ML pipeline (no data leakage)
+✔ Engineered 10+ financial indicators (RSI, MACD, SMA, Volatility, Volume Ratio)
+✔ Implemented multi-class classification (-1, 0, +1 trend prediction)
+✔ Compared Random Forest vs XGBoost performance
+✔ Integrated SHAP for global & local model explainability
+✔ Designed composite risk scoring using Volatility & Sharpe Ratio
+✔ Developed rule-based recommendation engine
 
-* RSI (Relative Strength Index)
+---
 
-### 📉 Trend Indicators
+## 📊 Feature Engineering
 
-* MACD
+### Momentum
+
+* RSI (14-day)
+
+### Trend
+
+* MACD & Signal Line
 * SMA (20, 50, 200)
 
-### 📊 Statistical Features
+### Statistical
 
 * Daily Returns
-* Rolling Volatility (20-day)
+* 20-day Rolling Volatility
 * Volume Ratio
 
-### 🎯 Target Variable
+---
 
-* Multi-class classification:
+## 🤖 Model Performance
 
-  * `1` → Uptrend (> +2% in 5 days)
-  * `0` → Stable
-  * `-1` → Downtrend (< -2% in 5 days)
+| Model         | Purpose                        |
+| ------------- | ------------------------------ |
+| Random Forest | Baseline non-linear classifier |
+| XGBoost       | Final gradient boosting model  |
+
+Chronological 80/20 split used to simulate real-world forecasting.
+
+Evaluation Metrics:
+
+* Accuracy
+* Weighted F1-Score
+* Confusion Matrix
 
 ---
 
-## 🤖 Models Implemented
+## 🔍 Explainable AI
 
-### 1️⃣ Random Forest (Baseline Model)
+Implemented SHAP to:
 
-* Handles non-linear feature interactions
-* Provides feature importance
-
-### 2️⃣ XGBoost (Advanced Model)
-
-* Gradient boosting
-* Improved classification performance
-* Used for final predictions
+* Identify most influential financial indicators
+* Explain individual Buy/Sell predictions
+* Improve model transparency
 
 ---
 
-## 🔍 Explainable AI (SHAP)
+## 📉 Risk Modeling
 
-* Global feature importance visualization
-* Local prediction explanation (Waterfall plots)
-* Identifies which indicators influence each decision
+Calculated:
 
-This ensures model transparency and interpretability.
+* Annualized Volatility
+* Sharpe Ratio
+* Composite Risk Score (0–100 scale)
 
----
+Risk categories:
 
-## 📉 Risk Modeling Module
-
-The system calculates:
-
-* **Annualized Volatility**
-* **Sharpe Ratio**
-* **Composite Risk Score (0–100 scale)**
-
-Stocks are categorized as:
-
-* Low Risk
-* Medium Risk
-* High Risk
+* Low
+* Medium
+* High
 
 ---
 
-## 🧠 Final Recommendation Engine
+## 🏗️ System Pipeline
 
-The system combines:
+```
+Data Collection → Feature Engineering → Target Creation
+→ Chronological Split → Model Training
+→ Evaluation → SHAP Explainability
+→ Risk Scoring → Recommendation Engine
+```
 
-* Predicted Trend
-* Model Confidence
-* Risk Category
+---
 
-To generate:
+## 🛠️ Tech Stack
 
-* Strong Buy
-* Buy
-* Hold
-* Sell
+* Python
+* Pandas, NumPy
+* Scikit-learn
+* XGBoost
+* SHAP
+* Matplotlib / Seaborn
+* yfinance
 
 ---
 
@@ -136,9 +119,6 @@ To generate:
 ai-stock-advisor/
 │
 ├── data/
-│   ├── raw/
-│   └── processed/
-│
 ├── notebooks/
 │   ├── 01_data_collection.ipynb
 │   ├── 02_eda.ipynb
@@ -151,44 +131,12 @@ ai-stock-advisor/
 
 ---
 
-## 🛠️ Tech Stack
+## 🚀 Future Improvements
 
-* Python
-* Pandas
-* NumPy
-* Scikit-learn
-* XGBoost
-* SHAP
-* Matplotlib / Seaborn
-* yfinance API
-
----
-
-## 📌 Key Learning Outcomes
-
-* Time-series aware ML modeling
-* Avoiding data leakage in financial prediction
-* Multi-class classification
-* Feature importance & explainability
-* Financial risk metric computation
-* Decision-engine design
-
----
-
-## ⚠️ Disclaimer
-
-This project is for educational and research purposes only.
-It does not constitute financial advice.
-
----
-
-## 📎 Future Improvements
-
-* Live stock data integration
 * Hyperparameter tuning
-* Portfolio optimization
-* Streamlit web application deployment
 * LSTM-based deep learning model
+* Portfolio optimization module
+* Streamlit web deployment
 
 ---
 
@@ -196,4 +144,4 @@ It does not constitute financial advice.
 
 Ruhaan Bansal
 CSE (Business Systems)
-Machine Learning & Quantitative Finance Enthusiast
+Focused on ML, Quantitative Finance & Decision Intelligence
