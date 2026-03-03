@@ -3,6 +3,9 @@
 An end-to-end quantitative machine learning system that integrates **time-series feature engineering, multi-class trend prediction (XGBoost), SHAP explainability, and quantitative risk modeling** to generate intelligent **Buy / Hold / Sell recommendations** for NSE-listed stocks.
 
 ---
+## 🌐 Live Demo
+
+🔗 https://ai-stock-advisor-umgtb43rb9fhdxdxeqy6me.streamlit.app/
 
 ## 🔎 Problem Statement
 
