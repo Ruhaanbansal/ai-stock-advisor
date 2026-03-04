@@ -1,150 +1,297 @@
-# 📈 AI-Powered Stock Advisory System
-
-An end-to-end quantitative machine learning system that integrates **time-series feature engineering, multi-class trend prediction (XGBoost), SHAP explainability, and quantitative risk modeling** to generate intelligent **Buy / Hold / Sell recommendations** for NSE-listed stocks.
-
 ---
+
+# 📈 AI-Powered Stock Advisor
+
 ## 🌐 Live Demo
 
-🔗 https://ai-stock-advisor-umgtb43rb9fhdxdxeqy6me.streamlit.app/
-
-## 🔎 Problem Statement
-
-Financial markets are noisy, non-linear, and risk-sensitive.
-The goal of this project is to design a structured ML pipeline that:
-
-* Predicts 5-day future stock direction
-* Quantifies investment risk
-* Provides interpretable model explanations
-* Outputs actionable investment decisions
+🔗 **Try the live dashboard:**
+[https://moneymeow.streamlit.app/](https://moneymeow.streamlit.app/) *(replace if your deployed link is different)*
 
 ---
 
-## 🧠 Core Contributions
+# 📊 Project Overview
 
-✔ Built time-series aware ML pipeline (no data leakage)
-✔ Engineered 10+ financial indicators (RSI, MACD, SMA, Volatility, Volume Ratio)
-✔ Implemented multi-class classification (-1, 0, +1 trend prediction)
-✔ Compared Random Forest vs XGBoost performance
-✔ Integrated SHAP for global & local model explainability
-✔ Designed composite risk scoring using Volatility & Sharpe Ratio
-✔ Developed rule-based recommendation engine
+The **AI-Powered Stock Advisor** is a machine learning and deep learning–based financial analytics system designed to analyze stock market data, forecast future prices, evaluate risk, and generate investment recommendations.
 
----
+The system integrates **time-series forecasting using LSTM neural networks**, **portfolio optimization techniques**, and **strategy backtesting** to create an interactive investment decision-support dashboard.
 
-## 📊 Feature Engineering
+The dashboard allows users to:
 
-### Momentum
+* Analyze stock performance
+* Predict future price movements
+* Optimize investment portfolios
+* Compare stock returns
+* Evaluate trading strategies
+* Visualize model performance
 
-* RSI (14-day)
-
-### Trend
-
-* MACD & Signal Line
-* SMA (20, 50, 200)
-
-### Statistical
-
-* Daily Returns
-* 20-day Rolling Volatility
-* Volume Ratio
+The application is deployed using **Streamlit Cloud**, making the analytics platform accessible through a web interface.
 
 ---
 
-## 🤖 Model Performance
+# 🚀 Key Features
 
-| Model         | Purpose                        |
-| ------------- | ------------------------------ |
-| Random Forest | Baseline non-linear classifier |
-| XGBoost       | Final gradient boosting model  |
+### 🤖 LSTM Price Forecasting
 
-Chronological 80/20 split used to simulate real-world forecasting.
+* Deep learning model predicts future stock prices.
+* Uses **60-day historical sequence windows**.
+* Incorporates technical indicators like:
 
-Evaluation Metrics:
+  * SMA20
+  * SMA50
+  * RSI
 
-* Accuracy
-* Weighted F1-Score
-* Confusion Matrix
+### 📊 Portfolio Optimization
 
----
+Implements **Modern Portfolio Theory (Mean-Variance Optimization)** to calculate optimal asset allocation.
 
-## 🔍 Explainable AI
+Features:
 
-Implemented SHAP to:
-
-* Identify most influential financial indicators
-* Explain individual Buy/Sell predictions
-* Improve model transparency
+* Expected return estimation
+* Covariance matrix calculation
+* Sharpe ratio maximization
+* Portfolio allocation visualization
 
 ---
 
-## 📉 Risk Modeling
+### 📈 Multi-Stock Performance Comparison
 
-Calculated:
+Users can compare the historical performance of multiple stocks using normalized price charts.
 
-* Annualized Volatility
-* Sharpe Ratio
-* Composite Risk Score (0–100 scale)
+Capabilities:
 
-Risk categories:
-
-* Low
-* Medium
-* High
+* Select multiple stocks
+* Normalize price movements
+* Identify best performing assets
 
 ---
 
-## 🏗️ System Pipeline
+### 📉 Strategy Backtesting
+
+The dashboard simulates trading strategies and compares them with traditional buy-and-hold investing.
+
+Strategies compared:
+
+| Strategy    | Description                                      |
+| ----------- | ------------------------------------------------ |
+| Buy & Hold  | Invest and hold asset for entire period          |
+| AI Strategy | Invest only when positive momentum signal occurs |
+
+This enables evaluation of **strategy profitability over time**.
+
+---
+
+### 📊 Model Evaluation
+
+The project includes model performance diagnostics such as:
+
+* **Actual vs Predicted Price Visualization**
+* **Mean Absolute Error (MAE)**
+* **Root Mean Squared Error (RMSE)**
+
+These metrics help quantify prediction accuracy.
+
+---
+
+### 📉 Risk Assessment
+
+Stocks are classified based on volatility into:
+
+* Low Risk
+* Medium Risk
+* High Risk
+
+Risk is calculated using **rolling volatility and return statistics**.
+
+---
+
+### 📥 Data Export
+
+Users can download:
+
+* Processed stock datasets
+* Backtest results
+* Strategy comparison data
+
+This allows deeper offline analysis.
+
+---
+
+# 🧠 Machine Learning Model
+
+The forecasting model uses a **Long Short-Term Memory (LSTM) neural network**, which is well suited for time-series prediction.
+
+### Model Architecture
 
 ```
-Data Collection → Feature Engineering → Target Creation
-→ Chronological Split → Model Training
-→ Evaluation → SHAP Explainability
-→ Risk Scoring → Recommendation Engine
+Input Features:
+Close Price
+SMA20
+SMA50
+RSI
+
+Architecture:
+LSTM (64 units)
+Dropout (0.2)
+LSTM (32 units)
+Dropout (0.2)
+Dense Output Layer
 ```
+
+### Training Setup
+
+| Parameter       | Value              |
+| --------------- | ------------------ |
+| Sequence Length | 60 trading days    |
+| Loss Function   | Mean Squared Error |
+| Optimizer       | Adam               |
+| Scaling         | MinMaxScaler       |
+
+The model learns temporal patterns from historical price movements and technical indicators to forecast future prices.
 
 ---
 
-## 🛠️ Tech Stack
+# 📊 Dashboard Components
+
+The interactive dashboard includes multiple analytical modules:
+
+### Stock Analysis
+
+* Price history visualization
+* Risk classification
+* Investment recommendation
+
+### Portfolio Optimization
+
+* Multi-asset portfolio allocation
+* Sharpe ratio maximization
+* Portfolio allocation chart
+
+### Multi-Stock Comparison
+
+* Performance comparison across stocks
+* Normalized growth visualization
+
+### Strategy Backtesting
+
+* AI strategy vs Buy-and-Hold comparison
+* Cumulative return visualization
+
+### Model Evaluation
+
+* Actual vs Predicted price chart
+* Error metrics (MAE, RMSE)
+* Model confidence indicator
+
+---
+
+# ⚙️ Tech Stack
+
+### Programming Language
 
 * Python
-* Pandas, NumPy
-* Scikit-learn
-* XGBoost
-* SHAP
-* Matplotlib / Seaborn
-* yfinance
+
+### Libraries & Frameworks
+
+| Category         | Tools              |
+| ---------------- | ------------------ |
+| Data Processing  | Pandas, NumPy      |
+| Machine Learning | Scikit-learn       |
+| Deep Learning    | TensorFlow / Keras |
+| Financial Data   | yfinance           |
+| Visualization    | Matplotlib         |
+| Web Dashboard    | Streamlit          |
 
 ---
 
-## 📁 Project Structure
+# 📂 Project Structure
 
 ```
 ai-stock-advisor/
 │
-├── data/
+├── app.py
+├── requirements.txt
+├── README.md
+│
 ├── notebooks/
 │   ├── 01_data_collection.ipynb
-│   ├── 02_eda.ipynb
-│   ├── 03_feature_engineering.ipynb
-│   └── 04_model_training.ipynb
+│   ├── 02_feature_engineering.ipynb
+│   ├── 03_model_training.ipynb
+│   ├── 04_model_training.ipynb
+│   ├── 05_portfolio_optimization.ipynb
+│   └── 06_lstm_model.ipynb
 │
-├── requirements.txt
-└── README.md
+├── data/
+│   ├── raw/
+│   └── processed/
+│
+└── assets/
 ```
 
 ---
 
-## 🚀 Future Improvements
+# 🔬 Methodology
 
-* Hyperparameter tuning
-* LSTM-based deep learning model
-* Portfolio optimization module
-* Streamlit web deployment
+The project follows a structured machine learning pipeline:
+
+1. Data Collection
+   Historical stock data is downloaded using **Yahoo Finance API**.
+
+2. Data Preprocessing
+
+   * Missing value handling
+   * Feature scaling
+   * Time-series sequencing
+
+3. Feature Engineering
+
+   * Moving averages
+   * Momentum indicators
+   * Technical signals
+
+4. Model Training
+   LSTM neural network trained on historical sequences.
+
+5. Strategy Simulation
+   Trading strategy evaluated using backtesting.
+
+6. Deployment
+   Interactive dashboard deployed using **Streamlit Cloud**.
 
 ---
 
-## 👨‍💻 Author
+# 📈 Example Use Cases
 
-Ruhaan Bansal
-CSE (Business Systems)
-Focused on ML, Quantitative Finance & Decision Intelligence
+This system can be used for:
+
+* Stock market analysis
+* Investment strategy testing
+* Financial data visualization
+* ML-based forecasting research
+* Portfolio allocation experimentation
+
+---
+
+# 🔮 Future Improvements
+
+Possible enhancements include:
+
+* Transformer-based time-series models
+* Reinforcement learning trading agents
+* Real-time market data streaming
+* News sentiment analysis integration
+* Automated portfolio rebalancing
+* Advanced risk metrics (VaR, CVaR)
+
+---
+
+# 👨‍💻 Author
+
+**Ruhaan Bansal**
+
+Computer Science Engineering
+Machine Learning & Data Analytics Enthusiast
+
+---
+
+# ⭐ If you found this project useful, consider giving it a star!
+
