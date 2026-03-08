@@ -1,61 +1,87 @@
-import yfinance as yf
+# =============================================================
+# dataloader.py — Data Loading (delegates to data_sources.py)
+# =============================================================
+
 import pandas as pd
+import streamlit as st
+
+from src.config       import DEFAULT_PERIOD, PORTFOLIO_PERIOD
+from src.data_sources import fetch_stock_data, fetch_portfolio_data
 
 
-def load_stock_data(stock, period="6mo"):
+# ─────────────────────────────────────────────────────────────
+# Load Single Stock
+# ─────────────────────────────────────────────────────────────
+
+def load_stock_data(
+    stock:  str,
+    period: str = DEFAULT_PERIOD,
+) -> pd.DataFrame | None:
     """
-    Download stock data from Yahoo Finance
+    Load OHLCV data using the waterfall strategy:
+    Yahoo Finance → Stooq → Alpha Vantage.
+    Stores the source name in st.session_state for display.
     """
-
-    data = yf.download(stock, period=period, auto_adjust=True)
-
-    if data.empty:
-        return None
-
-    # Flatten multi-index columns if present
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.get_level_values(0)
-
+    data, source = fetch_stock_data(stock, period)
+    st.session_state["data_source"] = source
     return data
 
 
-def get_close_prices(data):
+# ─────────────────────────────────────────────────────────────
+# Extract Clean Close Series
+# ─────────────────────────────────────────────────────────────
+
+def get_close_prices(data: pd.DataFrame) -> pd.Series:
+    """Extract a clean numeric Close price Series."""
+    close = data["Close"]
+    if isinstance(close, pd.DataFrame):
+        close = close.squeeze()
+    return pd.to_numeric(close, errors="coerce").dropna()
+
+
+# ─────────────────────────────────────────────────────────────
+# Load Multiple Stocks for Portfolio
+# ─────────────────────────────────────────────────────────────
+
+def load_portfolio_data(
+    stocks: tuple,
+    period: str = PORTFOLIO_PERIOD,
+) -> pd.DataFrame | None:
     """
-    Extract clean close price series
+    Load close prices for a portfolio of stocks.
+    Falls back per-ticker through all data sources.
     """
-
-    close_prices = data["Close"]
-
-    close_prices = pd.to_numeric(close_prices, errors="coerce")
-
-    close_prices = close_prices.dropna()
-
-    return close_prices
+    df, source_map = fetch_portfolio_data(stocks, period)
+    st.session_state["portfolio_sources"] = source_map
+    return df
 
 
-def load_portfolio_data(stocks, period="1y"):
-    """
-    Download multiple stocks for portfolio analysis
-    """
+# ─────────────────────────────────────────────────────────────
+# Daily Returns
+# ─────────────────────────────────────────────────────────────
 
-    data = yf.download(stocks, period=period, auto_adjust=True)
-
-    if data.empty:
-        return None
-
-    if isinstance(data.columns, pd.MultiIndex):
-        prices = data["Close"]
-    else:
-        prices = data[["Close"]]
-
-    return prices
+def calculate_returns(price_data: pd.DataFrame | pd.Series):
+    """Calculate daily percentage returns."""
+    return price_data.pct_change().dropna()
 
 
-def calculate_returns(price_data):
-    """
-    Calculate daily returns
-    """
+# ─────────────────────────────────────────────────────────────
+# Quick Stock Info
+# ─────────────────────────────────────────────────────────────
 
-    returns = price_data.pct_change().dropna()
-
-    return returns
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_stock_info(stock: str) -> dict:
+    """Fetch basic fundamental info. Returns empty dict on failure."""
+    try:
+        import yfinance as yf
+        info = yf.Ticker(stock).info
+        return {
+            "name":       info.get("longName", stock),
+            "sector":     info.get("sector", "N/A"),
+            "market_cap": info.get("marketCap"),
+            "pe_ratio":   info.get("trailingPE"),
+            "52w_high":   info.get("fiftyTwoWeekHigh"),
+            "52w_low":    info.get("fiftyTwoWeekLow"),
+        }
+    except Exception:
+        return {}

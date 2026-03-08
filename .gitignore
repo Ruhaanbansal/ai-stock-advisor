@@ -13,3 +13,7 @@ data/raw/
 # System files
 .DS_Store
 Thumbs.db
+
+models/
+
+.env

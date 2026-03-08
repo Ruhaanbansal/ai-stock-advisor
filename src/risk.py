@@ -1,104 +1,143 @@
+# =============================================================
+# risk.py — Comprehensive Risk Metrics
+# =============================================================
+
 import numpy as np
+import pandas as pd
+
+from src.config import LOW_RISK_THRESHOLD, HIGH_RISK_THRESHOLD, RISK_FREE_RATE
 
 
-# -------------------------------------------------
-# Calculate Daily Returns
-# -------------------------------------------------
+# ─────────────────────────────────────────────────────────────
+# Returns
+# ─────────────────────────────────────────────────────────────
 
-def calculate_returns(close_prices):
+def calculate_returns(close_prices: pd.Series) -> pd.Series:
+    return close_prices.pct_change().dropna()
+
+
+# ─────────────────────────────────────────────────────────────
+# Volatility
+# ─────────────────────────────────────────────────────────────
+
+def calculate_volatility(returns: pd.Series) -> float:
+    """Annualised historical volatility."""
+    return float(returns.std() * np.sqrt(252))
+
+
+# ─────────────────────────────────────────────────────────────
+# Sharpe Ratio
+# ─────────────────────────────────────────────────────────────
+
+def calculate_sharpe_ratio(
+    returns: pd.Series,
+    risk_free_rate: float = RISK_FREE_RATE
+) -> float:
     """
-    Calculate daily percentage returns
+    Annualised Sharpe Ratio.
+    Uses Indian 10Y government bond yield as the default risk-free rate.
     """
+    daily_rf = risk_free_rate / 252
+    excess   = returns - daily_rf
+    std      = returns.std()
+    if std == 0:
+        return 0.0
+    return float((excess.mean() / std) * np.sqrt(252))
 
-    returns = close_prices.pct_change().dropna()
 
-    return returns
+# ─────────────────────────────────────────────────────────────
+# Maximum Drawdown
+# ─────────────────────────────────────────────────────────────
 
-
-# -------------------------------------------------
-# Calculate Volatility
-# -------------------------------------------------
-
-def calculate_volatility(returns):
+def calculate_max_drawdown(close_prices: pd.Series) -> float:
     """
-    Annualized volatility
+    Maximum peak-to-trough drawdown expressed as a negative fraction.
     """
+    cum_ret = (1 + close_prices.pct_change().dropna()).cumprod()
+    peak    = cum_ret.cummax()
+    dd      = (cum_ret - peak) / peak
+    return float(dd.min())
 
-    volatility = returns.std() * np.sqrt(252)
 
-    return volatility
+# ─────────────────────────────────────────────────────────────
+# Value at Risk & Conditional VaR (Expected Shortfall)
+# ─────────────────────────────────────────────────────────────
 
-
-# -------------------------------------------------
-# Calculate Sharpe Ratio
-# -------------------------------------------------
-
-def calculate_sharpe_ratio(returns, risk_free_rate=0.01):
+def calculate_var(returns: pd.Series, confidence: float = 0.95) -> float:
     """
-    Sharpe Ratio calculation
+    Historical VaR at the given confidence level.
+    Returns a positive number representing the potential loss.
     """
-
-    excess_returns = returns - (risk_free_rate / 252)
-
-    sharpe_ratio = (excess_returns.mean() / returns.std()) * np.sqrt(252)
-
-    return sharpe_ratio
+    return float(-np.percentile(returns, (1 - confidence) * 100))
 
 
-# -------------------------------------------------
-# Calculate Maximum Drawdown
-# -------------------------------------------------
-
-def calculate_max_drawdown(close_prices):
+def calculate_cvar(returns: pd.Series, confidence: float = 0.95) -> float:
     """
-    Maximum drawdown calculation
+    Conditional VaR (Expected Shortfall) — average loss beyond VaR.
     """
-
-    cumulative_returns = (1 + close_prices.pct_change().dropna()).cumprod()
-
-    peak = cumulative_returns.cummax()
-
-    drawdown = (cumulative_returns - peak) / peak
-
-    max_drawdown = drawdown.min()
-
-    return max_drawdown
+    var      = calculate_var(returns, confidence)
+    tail     = returns[returns <= -var]
+    if tail.empty:
+        return var
+    return float(-tail.mean())
 
 
-# -------------------------------------------------
-# Risk Category Classification
-# -------------------------------------------------
+# ─────────────────────────────────────────────────────────────
+# Sortino Ratio
+# ─────────────────────────────────────────────────────────────
 
-def get_risk_category(volatility):
+def calculate_sortino_ratio(
+    returns: pd.Series,
+    risk_free_rate: float = RISK_FREE_RATE
+) -> float:
     """
-    Categorize asset risk level
+    Sortino Ratio — like Sharpe but penalises only downside volatility.
     """
+    daily_rf      = risk_free_rate / 252
+    excess        = returns - daily_rf
+    downside_std  = returns[returns < 0].std()
+    if downside_std == 0:
+        return 0.0
+    return float((excess.mean() / downside_std) * np.sqrt(252))
 
-    if volatility < 0.25:
+
+# ─────────────────────────────────────────────────────────────
+# Risk Category
+# ─────────────────────────────────────────────────────────────
+
+def get_risk_category(volatility: float) -> str:
+    if volatility < LOW_RISK_THRESHOLD:
         return "Low Risk"
-
-    elif volatility < 0.40:
+    elif volatility < HIGH_RISK_THRESHOLD:
         return "Medium Risk"
-
-    else:
-        return "High Risk"
+    return "High Risk"
 
 
-# -------------------------------------------------
-# Main Risk Dashboard Function
-# -------------------------------------------------
+# ─────────────────────────────────────────────────────────────
+# All Risk Metrics
+# ─────────────────────────────────────────────────────────────
 
-def calculate_risk_metrics(close_prices):
+def calculate_risk_metrics(close_prices: pd.Series) -> dict:
     """
-    Calculate all risk metrics for dashboard
+    Compute the full risk dashboard in one call.
+    Returns a dict of named metrics.
     """
-
     returns = calculate_returns(close_prices)
 
-    volatility = calculate_volatility(returns)
+    volatility    = calculate_volatility(returns)
+    sharpe        = calculate_sharpe_ratio(returns)
+    sortino       = calculate_sortino_ratio(returns)
+    max_dd        = calculate_max_drawdown(close_prices)
+    var_95        = calculate_var(returns, 0.95)
+    cvar_95       = calculate_cvar(returns, 0.95)
+    risk_category = get_risk_category(volatility)
 
-    sharpe_ratio = calculate_sharpe_ratio(returns)
-
-    max_drawdown = calculate_max_drawdown(close_prices)
-
-    return volatility, sharpe_ratio, max_drawdown
+    return {
+        "volatility":    volatility,
+        "sharpe_ratio":  sharpe,
+        "sortino_ratio": sortino,
+        "max_drawdown":  max_dd,
+        "var_95":        var_95,
+        "cvar_95":       cvar_95,
+        "risk_category": risk_category,
+    }

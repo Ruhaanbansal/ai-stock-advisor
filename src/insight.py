@@ -1,75 +1,74 @@
-def generate_ai_insight(
-    recommendation,
-    price_change,
-    sentiment_label,
-    volatility
-):
+# =============================================================
+# insight.py — Narrative Investment Insight Generator
+# =============================================================
 
+from src.config import LOW_RISK_THRESHOLD, HIGH_RISK_THRESHOLD
+
+
+def generate_ai_insight(
+    recommendation:  str,
+    price_change:    float,
+    sentiment_label: str,
+    volatility:      float,
+) -> list[str]:
+    """
+    Return a list of plain-English insight sentences combining
+    price trend, sentiment and volatility context.
+    """
     insight = []
 
-    # --------------------------------
-    # Price Trend Insight
-    # --------------------------------
-
-    if price_change > 1:
+    # Price trend
+    if price_change > 2:
         insight.append(
-            "The model predicts a positive short-term price movement."
+            f"The model projects a notable upside of {price_change:.2f}%, "
+            "suggesting positive short-term momentum."
         )
-
-    elif price_change < -1:
+    elif price_change > 0:
         insight.append(
-            "The model indicates a potential short-term price decline."
+            f"The model forecasts a modest gain of {price_change:.2f}%."
         )
-
+    elif price_change > -1:
+        insight.append(
+            "The model expects relatively flat price movement in the near term."
+        )
     else:
         insight.append(
-            "The model predicts relatively stable short-term price movement."
+            f"The model anticipates a decline of {abs(price_change):.2f}%. "
+            "Exercise caution."
         )
 
-    # --------------------------------
-    # Sentiment Insight
-    # --------------------------------
+    # Sentiment
+    sentiment_map = {
+        "Bullish":  "Positive news flow supports the bullish outlook.",
+        "Bearish":  "Negative news sentiment adds downside risk.",
+        "Neutral":  "News sentiment is neutral — no strong macro tailwinds or headwinds.",
+    }
+    insight.append(sentiment_map.get(sentiment_label, "Sentiment data unavailable."))
 
-    if sentiment_label == "Bullish":
+    # Volatility
+    if volatility < LOW_RISK_THRESHOLD:
         insight.append(
-            "Recent financial news shows positive sentiment around the company."
+            f"Annualised volatility of {volatility:.2%} is low — "
+            "the stock is behaving predictably."
         )
-
-    elif sentiment_label == "Bearish":
+    elif volatility < HIGH_RISK_THRESHOLD:
         insight.append(
-            "Recent news sentiment around the company is negative."
+            f"Moderate volatility ({volatility:.2%}) — "
+            "suitable for medium-risk investors."
         )
-
     else:
         insight.append(
-            "Market news sentiment remains neutral."
+            f"High volatility ({volatility:.2%}) — "
+            "short-term positions carry elevated risk."
         )
 
-    # --------------------------------
-    # Volatility Insight
-    # --------------------------------
-
-    if volatility < 0.25:
-        insight.append(
-            "The stock currently exhibits relatively low volatility, suggesting stable price behavior."
-        )
-
-    elif volatility < 0.40:
-        insight.append(
-            "The stock shows moderate volatility levels."
-        )
-
-    else:
-        insight.append(
-            "High volatility indicates elevated risk levels for short-term trading."
-        )
-
-    # --------------------------------
-    # Final Recommendation Insight
-    # --------------------------------
-
-    insight.append(
-        f"Based on the combined analysis, the AI system suggests a **{recommendation}** strategy."
-    )
+    # Final call
+    action_map = {
+        "Strong Buy": "The combined signals are strongly positive. The AI recommends **Strong Buy**.",
+        "Buy":        "Overall conditions are favourable. The AI recommends **Buy**.",
+        "Hold":       "Mixed signals suggest maintaining current positions. The AI recommends **Hold**.",
+        "Sell":       "Risk factors outweigh upside potential. The AI recommends **Sell**.",
+    }
+    insight.append(action_map.get(recommendation, f"AI recommendation: **{recommendation}**."))
 
     return insight
