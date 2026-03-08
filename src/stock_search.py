@@ -140,7 +140,6 @@ NSE_STOCKS: dict[str, str] = {
     "indigo":                       "INDIGO.NS",
     "interglobe aviation":          "INDIGO.NS",
     "spicejet":                     "SPICEJET.NS",
-    "air india":                    "AIRINDIA.NS",
     "vedanta":                      "VEDL.NS",
     "vedl":                         "VEDL.NS",
     "coal india":                   "COALINDIA.NS",

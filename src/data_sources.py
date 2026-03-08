@@ -150,60 +150,62 @@ def _fetch_alpha_vantage(ticker: str, period: str) -> pd.DataFrame | None:
 
 def _fetch_nse(ticker: str, period: str) -> pd.DataFrame | None:
     """
-    NSE India's public API — completely free, no API key needed.
-    Works reliably from Streamlit Cloud since it's an Indian govt API.
+    NSE India public API with proper cookie handling.
+    NSE requires: 1) visit homepage to get cookies, 2) then call API.
     """
     try:
         import requests
-        base    = ticker.replace(".NS","").replace(".BO","").upper()
-        days    = _PERIOD_DAYS.get(period, 365)
-        end_dt  = datetime.today()
-        start_dt = end_dt - timedelta(days=days)
+        from io import StringIO
 
-        # NSE historical data API
-        end_str   = end_dt.strftime("%d-%m-%Y")
+        base     = ticker.replace(".NS","").replace(".BO","").upper()
+        days     = _PERIOD_DAYS.get(period, 365)
+        end_dt   = datetime.today()
+        start_dt = end_dt - timedelta(days=days)
+        end_str  = end_dt.strftime("%d-%m-%Y")
         start_str = start_dt.strftime("%d-%m-%Y")
 
-        # NSE requires a cookie — first hit the main page
-        session = requests.Session()
-        session.headers.update({
+        headers = {
             **_BROWSER_HEADERS,
-            "Referer": "https://www.nseindia.com/",
-        })
-        session.get("https://www.nseindia.com", timeout=10)
+            "Referer":    "https://www.nseindia.com/",
+            "X-Requested-With": "XMLHttpRequest",
+        }
 
-        url  = (f"https://www.nseindia.com/api/historical/cm/equity"
-                f"?symbol={base}&series=[%22EQ%22]"
-                f"&from={start_str}&to={end_str}&csv=true")
-        r    = session.get(url, timeout=15)
+        session = requests.Session()
+        session.headers.update(headers)
+
+        # Step 1: get cookies
+        session.get("https://www.nseindia.com/", timeout=10)
+        session.get("https://www.nseindia.com/market-data/live-equity-market", timeout=10)
+
+        # Step 2: fetch historical data
+        url = (f"https://www.nseindia.com/api/historical/cm/equity"
+               f"?symbol={base}&series=[%22EQ%22]"
+               f"&from={start_str}&to={end_str}&csv=true")
+        r = session.get(url, timeout=20)
 
         if r.status_code != 200 or len(r.text) < 100:
             return None
 
-        from io import StringIO
         df = pd.read_csv(StringIO(r.text))
         if df.empty:
             return None
 
-        # NSE column names vary — normalise
         col_map = {}
         for c in df.columns:
-            cl = c.strip().lower()
-            if "date" in cl:       col_map[c] = "Date"
-            elif cl in ("close","ltp","last"): col_map[c] = "Close"
-            elif "open" in cl:     col_map[c] = "Open"
-            elif "high" in cl:     col_map[c] = "High"
-            elif "low" in cl:      col_map[c] = "Low"
-            elif "volume" in cl or "traded qty" in cl: col_map[c] = "Volume"
+            cl = c.strip().lower().replace(" ","")
+            if cl == "date":                  col_map[c] = "Date"
+            elif cl in ("close","ltp"):       col_map[c] = "Close"
+            elif cl == "open":                col_map[c] = "Open"
+            elif cl == "high":                col_map[c] = "High"
+            elif cl == "low":                 col_map[c] = "Low"
+            elif "volume" in cl or "tradedqty" in cl: col_map[c] = "Volume"
 
         df = df.rename(columns=col_map)
         if "Date" not in df.columns or "Close" not in df.columns:
             return None
 
         df["Date"]  = pd.to_datetime(df["Date"], dayfirst=True, errors="coerce")
-        df["Close"] = pd.to_numeric(
-            df["Close"].astype(str).str.replace(",",""), errors="coerce"
-        )
+        df["Close"] = pd.to_numeric(df["Close"].astype(str).str.replace(",",""), errors="coerce")
         df = df.dropna(subset=["Date","Close"]).set_index("Date").sort_index()
 
         if _valid(df):
