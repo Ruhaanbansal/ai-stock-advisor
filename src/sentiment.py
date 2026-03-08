@@ -41,18 +41,10 @@ def _get_newsapi():
     return _newsapi_client
 
 
-@st.cache_resource(show_spinner=False)
+# FinBERT removed — requires torch/transformers (~2GB) incompatible with Python 3.14
+# Using VADER as primary sentiment model (lightweight, no build deps)
 def _get_finbert():
-    try:
-        from transformers import pipeline
-        return pipeline(
-            "sentiment-analysis",
-            model="ProsusAI/finbert",
-            truncation=True,
-            max_length=512,
-        )
-    except Exception:
-        return None
+    return None
 
 
 @st.cache_resource(show_spinner=False)
@@ -177,13 +169,10 @@ def get_news_sentiment(stock: str) -> tuple[float, str, list[str], str]:
     if not headlines:
         return 0.0, "Neutral", [], "No news available"
 
-    # Choose sentiment model based on news source and availability
-    if news_source == "newsapi" and _get_finbert() is not None:
-        score       = _score_with_finbert(headlines)
-        model_label = "NewsAPI + FinBERT"
-    else:
-        score       = _score_with_vader(headlines)
-        model_label = "yfinance news + VADER"
+    # Always use VADER (FinBERT removed due to Python 3.14 incompatibility)
+    score       = _score_with_vader(headlines)
+    model_label = ("NewsAPI + VADER" if news_source == "newsapi"
+                   else "yfinance news + VADER")
 
     if score > BULLISH_THRESHOLD:
         label = "Bullish"
