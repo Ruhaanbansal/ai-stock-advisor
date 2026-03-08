@@ -38,6 +38,16 @@ _BROWSER_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
+# Tickers Yahoo Finance 404s on .NS but works on .BO
+# Add any problematic tickers here
+_YAHOO_USE_BO = {
+    "TATAMOTORS.NS",   # Yahoo dropped NSE listing, use BSE
+    "ZOMATO.NS",       # newly listed, use BSE
+    "NYKAA.NS",        # newly listed
+    "PAYTM.NS",        # newly listed
+    "POLICYBZR.NS",    # newly listed
+}
+
 
 # ─────────────────────────────────────────────────────────────
 # Helpers
@@ -77,11 +87,15 @@ def _fetch_yf_curl(ticker: str, period: str) -> pd.DataFrame | None:
     import yfinance as yf
 
     # Build list of tickers to try
-    variants = [ticker]
-    if ticker.endswith(".NS"):
-        variants.append(ticker.replace(".NS", ".BO"))  # try BSE
+    # For known problematic .NS tickers, try .BO first
+    if ticker in _YAHOO_USE_BO:
+        variants = [ticker.replace(".NS", ".BO"), ticker]
+    elif ticker.endswith(".NS"):
+        variants = [ticker, ticker.replace(".NS", ".BO")]
     elif ticker.endswith(".BO"):
-        variants.append(ticker.replace(".BO", ".NS"))  # try NSE
+        variants = [ticker, ticker.replace(".BO", ".NS")]
+    else:
+        variants = [ticker]
 
     for t in variants:
         try:

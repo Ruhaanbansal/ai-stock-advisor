@@ -190,7 +190,7 @@ with st.sidebar:
 
     search_query = st.text_input(
         "Search",
-        placeholder="e.g. Zomato, TATAMOTORS, HDFC Bank…",
+        placeholder="e.g. Reliance, TATASTEEL, HDFC Bank…",
         label_visibility="collapsed",
     )
 
@@ -642,7 +642,7 @@ elif page == "💼 Portfolio Optimizer":
     with s_col1:
         pf_query = st.text_input(
             "Stock search",
-            placeholder="Search any NSE stock — name or ticker (e.g. Zomato, IRCTC, HDFCBANK)…",
+            placeholder="Search any NSE stock — name or ticker (e.g. Reliance, IRCTC, HDFCBANK)…",
             value=st.session_state.pf_search_query,
             key="pf_search_input",
             label_visibility="collapsed",

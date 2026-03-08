@@ -78,8 +78,8 @@ NSE_STOCKS: dict[str, str] = {
     "dr reddys":                    "DRREDDY.NS",
     "dr reddy's laboratories":      "DRREDDY.NS",
     "drreddy":                      "DRREDDY.NS",
-    "tata motors":                  "TATAMOTORS.NS",
-    "tatamotors":                   "TATAMOTORS.NS",
+    "tata motors":                  "TATAMOTORS.BO",
+    "tatamotors":                   "TATAMOTORS.BO",
     "tata steel":                   "TATASTEEL.NS",
     "tatasteel":                    "TATASTEEL.NS",
     "jsw steel":                    "JSWSTEEL.NS",
@@ -115,7 +115,6 @@ NSE_STOCKS: dict[str, str] = {
     "tata consumer products":       "TATACONSUM.NS",
 
     # ── Nifty Next 50 / Popular Mid-caps ──────────────────────
-    "zomato":                       "ZOMATO.NS",
     "paytm":                        "PAYTM.NS",
     "one97 communications":         "PAYTM.NS",
     "nykaa":                        "NYKAA.NS",
