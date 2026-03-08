@@ -1,297 +1,160 @@
----
+# 🧠 NiftyMind — AI-Powered Indian Stock Intelligence
 
-# 📈 AI-Powered Stock Advisor
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://niftymind.streamlit.app)
+![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-## 🌐 Live Demo
-
-🔗 **Try the live dashboard:**
-[https://moneymeow.streamlit.app/](https://moneymeow.streamlit.app/) *(replace if your deployed link is different)*
-
----
-
-# 📊 Project Overview
-
-The **AI-Powered Stock Advisor** is a machine learning and deep learning–based financial analytics system designed to analyze stock market data, forecast future prices, evaluate risk, and generate investment recommendations.
-
-The system integrates **time-series forecasting using LSTM neural networks**, **portfolio optimization techniques**, and **strategy backtesting** to create an interactive investment decision-support dashboard.
-
-The dashboard allows users to:
-
-* Analyze stock performance
-* Predict future price movements
-* Optimize investment portfolios
-* Compare stock returns
-* Evaluate trading strategies
-* Visualize model performance
-
-The application is deployed using **Streamlit Cloud**, making the analytics platform accessible through a web interface.
+NiftyMind is a full-stack AI stock analysis platform for Indian markets (NSE/BSE). It combines machine learning price prediction, real-time sentiment analysis, portfolio optimisation, and backtesting — all in a sleek dark-themed web app.
 
 ---
 
-# 🚀 Key Features
+## ✨ Features
 
-### 🤖 LSTM Price Forecasting
-
-* Deep learning model predicts future stock prices.
-* Uses **60-day historical sequence windows**.
-* Incorporates technical indicators like:
-
-  * SMA20
-  * SMA50
-  * RSI
-
-### 📊 Portfolio Optimization
-
-Implements **Modern Portfolio Theory (Mean-Variance Optimization)** to calculate optimal asset allocation.
-
-Features:
-
-* Expected return estimation
-* Covariance matrix calculation
-* Sharpe ratio maximization
-* Portfolio allocation visualization
+| Feature | Description |
+|---------|-------------|
+| 📈 **AI Price Prediction** | GradientBoosting model trained on 1 year of historical data with 5-day forecast |
+| 📰 **Market Intelligence** | Live news sentiment via VADER NLP + NewsAPI integration |
+| 💼 **Portfolio Optimizer** | Sharpe-ratio, inverse-volatility & momentum weighted allocation with efficient frontier |
+| 🔁 **Backtesting** | Compare Buy & Hold vs AI vs Momentum vs Mean Reversion strategies |
+| 📊 **Model Evaluation** | MAE, RMSE, MAPE metrics with actual vs predicted chart |
+| 🔍 **NSE Stock Search** | 150+ NSE stocks with live autocomplete suggestions |
+| 🌐 **Multi-Source Data** | Yahoo Finance → Alpha Vantage → Stooq waterfall with auto-fallback |
 
 ---
 
-### 📈 Multi-Stock Performance Comparison
+## 🚀 Live Demo
 
-Users can compare the historical performance of multiple stocks using normalized price charts.
-
-Capabilities:
-
-* Select multiple stocks
-* Normalize price movements
-* Identify best performing assets
+👉 **[niftymind.streamlit.app](https://niftymind.streamlit.app)**
 
 ---
 
-### 📉 Strategy Backtesting
+## 🛠️ Tech Stack
 
-The dashboard simulates trading strategies and compares them with traditional buy-and-hold investing.
-
-Strategies compared:
-
-| Strategy    | Description                                      |
-| ----------- | ------------------------------------------------ |
-| Buy & Hold  | Invest and hold asset for entire period          |
-| AI Strategy | Invest only when positive momentum signal occurs |
-
-This enables evaluation of **strategy profitability over time**.
+- **Frontend:** Streamlit, Plotly, custom CSS
+- **ML Model:** scikit-learn GradientBoostingRegressor
+- **Data Sources:** yfinance, Alpha Vantage, Stooq, NSE India API
+- **NLP:** VADER Sentiment, NewsAPI
+- **Portfolio Math:** scipy, numpy (Markowitz optimisation)
 
 ---
 
-### 📊 Model Evaluation
+## 📦 Installation
 
-The project includes model performance diagnostics such as:
-
-* **Actual vs Predicted Price Visualization**
-* **Mean Absolute Error (MAE)**
-* **Root Mean Squared Error (RMSE)**
-
-These metrics help quantify prediction accuracy.
-
----
-
-### 📉 Risk Assessment
-
-Stocks are classified based on volatility into:
-
-* Low Risk
-* Medium Risk
-* High Risk
-
-Risk is calculated using **rolling volatility and return statistics**.
-
----
-
-### 📥 Data Export
-
-Users can download:
-
-* Processed stock datasets
-* Backtest results
-* Strategy comparison data
-
-This allows deeper offline analysis.
-
----
-
-# 🧠 Machine Learning Model
-
-The forecasting model uses a **Long Short-Term Memory (LSTM) neural network**, which is well suited for time-series prediction.
-
-### Model Architecture
-
-```
-Input Features:
-Close Price
-SMA20
-SMA50
-RSI
-
-Architecture:
-LSTM (64 units)
-Dropout (0.2)
-LSTM (32 units)
-Dropout (0.2)
-Dense Output Layer
+### 1. Clone the repo
+```bash
+git clone https://github.com/Ruhaanbansal/ai-stock-advisor.git
+cd ai-stock-advisor
 ```
 
-### Training Setup
+### 2. Create a virtual environment
+```bash
+python -m venv venv
+# Windows
+venv\Scripts\activate
+# Mac/Linux
+source venv/bin/activate
+```
 
-| Parameter       | Value              |
-| --------------- | ------------------ |
-| Sequence Length | 60 trading days    |
-| Loss Function   | Mean Squared Error |
-| Optimizer       | Adam               |
-| Scaling         | MinMaxScaler       |
+### 3. Install dependencies
+```bash
+pip install -r requirements.txt
+```
 
-The model learns temporal patterns from historical price movements and technical indicators to forecast future prices.
+### 4. Set up API keys
+Create a `.env` file in the root directory:
+```env
+NEWS_API_KEY=your_newsapi_key_here
+ALPHA_VANTAGE_KEY=your_alphavantage_key_here
+```
 
----
+Get free API keys from:
+- **NewsAPI:** https://newsapi.org/register (free tier: 100 requests/day)
+- **Alpha Vantage:** https://www.alphavantage.co/support/#api-key (free tier: 25 requests/day)
 
-# 📊 Dashboard Components
+> **Note:** Both keys are optional. The app works without them using yfinance + VADER as fallbacks.
 
-The interactive dashboard includes multiple analytical modules:
-
-### Stock Analysis
-
-* Price history visualization
-* Risk classification
-* Investment recommendation
-
-### Portfolio Optimization
-
-* Multi-asset portfolio allocation
-* Sharpe ratio maximization
-* Portfolio allocation chart
-
-### Multi-Stock Comparison
-
-* Performance comparison across stocks
-* Normalized growth visualization
-
-### Strategy Backtesting
-
-* AI strategy vs Buy-and-Hold comparison
-* Cumulative return visualization
-
-### Model Evaluation
-
-* Actual vs Predicted price chart
-* Error metrics (MAE, RMSE)
-* Model confidence indicator
+### 5. Run the app
+```bash
+streamlit run app.py
+```
 
 ---
 
-# ⚙️ Tech Stack
-
-### Programming Language
-
-* Python
-
-### Libraries & Frameworks
-
-| Category         | Tools              |
-| ---------------- | ------------------ |
-| Data Processing  | Pandas, NumPy      |
-| Machine Learning | Scikit-learn       |
-| Deep Learning    | TensorFlow / Keras |
-| Financial Data   | yfinance           |
-| Visualization    | Matplotlib         |
-| Web Dashboard    | Streamlit          |
-
----
-
-# 📂 Project Structure
+## 📁 Project Structure
 
 ```
 ai-stock-advisor/
-│
-├── app.py
-├── requirements.txt
-├── README.md
-│
-├── notebooks/
-│   ├── 01_data_collection.ipynb
-│   ├── 02_feature_engineering.ipynb
-│   ├── 03_model_training.ipynb
-│   ├── 04_model_training.ipynb
-│   ├── 05_portfolio_optimization.ipynb
-│   └── 06_lstm_model.ipynb
-│
+├── app.py                  # Main Streamlit application
+├── requirements.txt        # Python dependencies
+├── .env                    # API keys (not committed to git)
+├── models/                 # Saved ML models (auto-created, gitignored)
 ├── data/
-│   ├── raw/
-│   └── processed/
-│
-└── assets/
+│   ├── raw/                # Historical CSV files
+│   └── processed/          # Feature-engineered data
+├── notebooks/              # Jupyter notebooks for EDA & model training
+└── src/
+    ├── config.py           # Constants and configuration
+    ├── data_sources.py     # Multi-source data fetching waterfall
+    ├── dataloader.py       # Data loading interface
+    ├── stock_search.py     # NSE stock search & autocomplete
+    ├── model.py            # GradientBoosting price prediction
+    ├── features.py         # Technical indicators (RSI, MACD, BB, ATR)
+    ├── sentiment.py        # News sentiment analysis
+    ├── risk.py             # Risk metrics (VaR, CVaR, Sharpe, Sortino)
+    ├── advisor.py          # AI recommendation engine
+    ├── alerts.py           # Market alert detection
+    ├── portfolio.py        # Portfolio optimisation
+    ├── backtest.py         # Strategy backtesting
+    ├── evaluation.py       # Model evaluation metrics
+    ├── explainability.py   # Feature importance & technical signals
+    └── insight.py          # Natural language market insights
 ```
 
 ---
 
-# 🔬 Methodology
+## ☁️ Deploying to Streamlit Cloud
 
-The project follows a structured machine learning pipeline:
-
-1. Data Collection
-   Historical stock data is downloaded using **Yahoo Finance API**.
-
-2. Data Preprocessing
-
-   * Missing value handling
-   * Feature scaling
-   * Time-series sequencing
-
-3. Feature Engineering
-
-   * Moving averages
-   * Momentum indicators
-   * Technical signals
-
-4. Model Training
-   LSTM neural network trained on historical sequences.
-
-5. Strategy Simulation
-   Trading strategy evaluated using backtesting.
-
-6. Deployment
-   Interactive dashboard deployed using **Streamlit Cloud**.
+1. Push your code to GitHub
+2. Go to [share.streamlit.io](https://share.streamlit.io) and click **Create app**
+3. Select your repo, branch `main`, and main file `app.py`
+4. Go to **Settings → Secrets** and add:
+```toml
+NEWS_API_KEY = "your_key_here"
+ALPHA_VANTAGE_KEY = "your_key_here"
+```
+5. Click **Deploy**
 
 ---
 
-# 📈 Example Use Cases
+## 📊 Data Sources
 
-This system can be used for:
+NiftyMind uses a **waterfall fallback** strategy to ensure data is always available:
 
-* Stock market analysis
-* Investment strategy testing
-* Financial data visualization
-* ML-based forecasting research
-* Portfolio allocation experimentation
-
----
-
-# 🔮 Future Improvements
-
-Possible enhancements include:
-
-* Transformer-based time-series models
-* Reinforcement learning trading agents
-* Real-time market data streaming
-* News sentiment analysis integration
-* Automated portfolio rebalancing
-* Advanced risk metrics (VaR, CVaR)
+1. **Yahoo Finance** (primary) — free, no key, real-time
+2. **Alpha Vantage** (fallback) — requires free API key
+3. **Stooq** (fallback) — free, no key
+4. **Bundled CSVs** (last resort) — repo data for major stocks
 
 ---
 
-# 👨‍💻 Author
+## ⚠️ Disclaimer
 
-**Ruhaan Bansal**
-
-Computer Science Engineering
-Machine Learning & Data Analytics Enthusiast
+This application is built for **educational purposes only**. Nothing on NiftyMind constitutes financial advice. Always do your own research before making investment decisions.
 
 ---
 
-# ⭐ If you found this project useful, consider giving it a star!
+## 🤝 Contributing
 
+Pull requests are welcome! For major changes, please open an issue first.
+
+---
+
+## 📄 License
+
+MIT License — see [LICENSE](LICENSE) for details.
+
+---
+
+<div align="center">
+Built with ❤️ for Indian markets
+</div>

@@ -39,7 +39,8 @@ _BROWSER_HEADERS = {
 }
 
 # Tickers Yahoo Finance 404s on .NS but works on .BO
-# Add any problematic tickers here
+# This set is AUTO-UPDATED at runtime — if .NS returns 404,
+# the ticker is added here so future calls skip straight to .BO
 _YAHOO_USE_BO = {
     "TATAMOTORS.NS",   # Yahoo dropped NSE listing, use BSE
     "ZOMATO.NS",       # newly listed, use BSE
@@ -47,6 +48,12 @@ _YAHOO_USE_BO = {
     "PAYTM.NS",        # newly listed
     "POLICYBZR.NS",    # newly listed
 }
+
+def _mark_use_bo(ticker: str) -> None:
+    """Auto-register a ticker as needing .BO instead of .NS."""
+    if ticker.endswith(".NS") and ticker not in _YAHOO_USE_BO:
+        _YAHOO_USE_BO.add(ticker)
+        logger.info(f"Auto-registered {ticker} → will use .BO on next fetch")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -105,8 +112,15 @@ def _fetch_yf_curl(ticker: str, period: str) -> pd.DataFrame | None:
                 data = _flatten(data)
                 logger.info(f"yfinance internal OK: {t} → {len(data)} rows")
                 return data.dropna(subset=["Close"])
+            else:
+                # Empty data on .NS → auto-register for .BO next time
+                if t.endswith(".NS"):
+                    _mark_use_bo(t)
         except Exception as e:
             logger.warning(f"yfinance internal [{t}]: {e}")
+            # 404 on .NS → auto-register for .BO next time
+            if t.endswith(".NS") and ("404" in str(e) or "No data" in str(e) or "delisted" in str(e).lower()):
+                _mark_use_bo(t)
             continue
     return None
 

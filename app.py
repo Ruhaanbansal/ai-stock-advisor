@@ -194,11 +194,10 @@ with st.sidebar:
         label_visibility="collapsed",
     )
 
-    # Initialise session state for selected stock
+    # Initialise session state — None shows welcome page on first load
     if "selected_stock" not in st.session_state:
-        st.session_state.selected_stock = "RELIANCE.NS"
-    if "selected_stock_name" not in st.session_state:
-        st.session_state.selected_stock_name = "Reliance Industries"
+        st.session_state.selected_stock      = None
+        st.session_state.selected_stock_name = None
 
     # Live suggestions while typing
     if search_query and len(search_query) >= 2:
@@ -250,7 +249,7 @@ with st.sidebar:
             st.rerun()
 
     # ── Currently selected ────────────────────────────────────
-    stock = st.session_state.selected_stock
+    stock = st.session_state.get("selected_stock") or "RELIANCE.NS"
 
     st.markdown(
         f"<div style='background:#111520;border:1px solid #1e2538;border-radius:8px;"
@@ -273,6 +272,68 @@ with st.sidebar:
 
     st.markdown("---")
     st.caption(f"Last updated: {datetime.now().strftime('%d %b %Y, %H:%M')}")
+
+
+# ══════════════════════════════════════════════════════════════
+# WELCOME PAGE — shown until user picks a stock
+# ══════════════════════════════════════════════════════════════
+
+if st.session_state.get("selected_stock") is None:
+    st.markdown("""
+    <div style='text-align:center;padding:60px 20px 30px'>
+        <div style='font-size:56px;margin-bottom:16px'>🧠</div>
+        <h1 style='font-size:2.4rem;font-weight:700;
+                   background:linear-gradient(135deg,#00d4aa,#6c63ff);
+                   -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+                   margin-bottom:8px'>Welcome to NiftyMind</h1>
+        <p style='color:#7a8299;font-size:1.1rem;max-width:520px;margin:0 auto 32px'>
+            AI-powered stock intelligence for Indian markets.<br>
+            Search any NSE stock or pick one below to get started.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Feature highlights
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("""<div style='background:#111520;border:1px solid #1e2538;
+            border-radius:12px;padding:20px;text-align:center'>
+            <div style='font-size:28px'>📈</div>
+            <div style='font-weight:600;color:#e4e8f0;margin:8px 0 4px'>AI Prediction</div>
+            <div style='font-size:12px;color:#7a8299'>GradientBoosting model trained on 1 year of price history</div>
+            </div>""", unsafe_allow_html=True)
+    with col2:
+        st.markdown("""<div style='background:#111520;border:1px solid #1e2538;
+            border-radius:12px;padding:20px;text-align:center'>
+            <div style='font-size:28px'>📰</div>
+            <div style='font-weight:600;color:#e4e8f0;margin:8px 0 4px'>Sentiment Analysis</div>
+            <div style='font-size:12px;color:#7a8299'>Live news sentiment powered by VADER NLP</div>
+            </div>""", unsafe_allow_html=True)
+    with col3:
+        st.markdown("""<div style='background:#111520;border:1px solid #1e2538;
+            border-radius:12px;padding:20px;text-align:center'>
+            <div style='font-size:28px'>💼</div>
+            <div style='font-weight:600;color:#e4e8f0;margin:8px 0 4px'>Portfolio Optimizer</div>
+            <div style='font-size:12px;color:#7a8299'>Sharpe-ratio optimised allocation across NSE stocks</div>
+            </div>""", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Quick-pick popular stocks
+    st.markdown(
+        "<div style='text-align:center;font-size:13px;color:#7a8299;"
+        "margin-bottom:16px'>⚡ Popular stocks — click to explore</div>",
+        unsafe_allow_html=True
+    )
+    qcols = st.columns(len(STOCK_LIST))
+    for i, ticker in enumerate(STOCK_LIST):
+        label = STOCK_LABELS.get(ticker, ticker).split()[0]
+        if qcols[i].button(label, key=f"welcome_{i}_{ticker.replace('.','_')}", width="stretch"):
+            st.session_state.selected_stock      = ticker
+            st.session_state.selected_stock_name = STOCK_LABELS.get(ticker, ticker)
+            st.rerun()
+
+    st.stop()   # don't render anything else until a stock is selected
 
 
 # ══════════════════════════════════════════════════════════════
