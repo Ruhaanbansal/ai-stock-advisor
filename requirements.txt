@@ -22,3 +22,5 @@ matplotlib>=3.7.0
 
 # ── Utilities ─────────────────────────────────────────────────
 python-dotenv>=1.0.0
+pandas-datareader>=0.10.0
+lxml>=4.9.0

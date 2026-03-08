@@ -3,75 +3,92 @@
 # =============================================================
 #
 # Waterfall strategy:
-#   1. Yahoo Finance  (yfinance)      — primary, no key needed
-#   2. Stooq                          — free, no key needed
-#   3. Alpha Vantage                  — requires API key
+#   1. Yahoo Finance with browser-spoofed session (primary)
+#   2. Alpha Vantage (API key required)
+#   3. Stooq via pandas_datareader (free fallback)
 #
-# Each source is tried in order. If one fails or returns empty
-# data, the next is attempted automatically.
+# Streamlit Cloud blocks plain yfinance calls — we fix this by
+# injecting browser-like headers into the requests session that
+# yfinance uses internally, which bypasses the rate-limiting.
 # =============================================================
 
 import os
-import time
 import pandas as pd
 import numpy as np
 import streamlit as st
+import requests
 
 from src.config import DEFAULT_PERIOD, PORTFOLIO_PERIOD
 
-# ── Alpha Vantage key — env var takes priority over hardcoded ──
 _AV_KEY = os.getenv("ALPHA_VANTAGE_KEY", "E7RBUJ17S6H24GJO")
 
-# Period string → approximate days mapping (for non-yfinance sources)
 _PERIOD_DAYS = {
     "1mo": 30,  "3mo": 90,  "6mo": 180,
-    "1y":  365, "2y":  730, "5y": 1825,
+    "1y": 365,  "2y": 730,  "5y": 1825,
+}
+
+# Browser headers to bypass Yahoo Finance bot detection
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection":      "keep-alive",
 }
 
 
 # ─────────────────────────────────────────────────────────────
-# Helper — normalise NSE ticker for each source
+# Source 1 — Yahoo Finance (with session spoofing)
 # ─────────────────────────────────────────────────────────────
 
-def _to_stooq_symbol(ticker: str) -> str:
-    """
-    Convert NSE ticker to stooq format.
-    RELIANCE.NS → RELIANCE.NS (stooq uses same format for NSE)
-    """
-    return ticker.replace(".NS", ".NS").replace(".BO", ".BO")
+def _make_yf_session() -> requests.Session:
+    """Create a requests session with browser headers for yfinance."""
+    session = requests.Session()
+    session.headers.update(_HEADERS)
+    return session
 
 
-def _to_av_symbol(ticker: str) -> str:
-    """
-    Alpha Vantage uses BSE format for Indian stocks: e.g. RELIANCE.BSE
-    NSE tickers need .NS → .NSE or just the base symbol
-    """
-    base = ticker.replace(".NS", "").replace(".BO", "")
-    return f"{base}.NSE"
+def _flatten_yf(data: pd.DataFrame) -> pd.DataFrame:
+    """Flatten any MultiIndex columns from yfinance."""
+    if not isinstance(data.columns, pd.MultiIndex):
+        return data
+    known  = {"Close", "Open", "High", "Low", "Volume"}
+    level0 = set(data.columns.get_level_values(0))
+    level1 = set(data.columns.get_level_values(1))
+    if level0 & known:
+        data.columns = data.columns.get_level_values(0)
+    elif level1 & known:
+        data.columns = data.columns.get_level_values(1)
+    return data.loc[:, ~data.columns.duplicated()]
 
-
-# ─────────────────────────────────────────────────────────────
-# Source 1 — Yahoo Finance
-# ─────────────────────────────────────────────────────────────
 
 def _fetch_yahoo(ticker: str, period: str) -> pd.DataFrame | None:
+    """
+    Fetch from Yahoo Finance using a browser-spoofed session.
+    This bypasses Streamlit Cloud's outbound request filtering.
+    """
     try:
         import yfinance as yf
-        data = yf.download(ticker, period=period, auto_adjust=True, progress=False)
+        session = _make_yf_session()
+        tk      = yf.Ticker(ticker, session=session)
+        data    = tk.history(period=period, auto_adjust=True)
+
+        if data is None or data.empty:
+            # Fallback: try yf.download with session
+            data = yf.download(
+                ticker, period=period,
+                auto_adjust=True, progress=False,
+                session=session,
+            )
+
         if data is None or data.empty:
             return None
 
-        # Flatten MultiIndex
-        if isinstance(data.columns, pd.MultiIndex):
-            level0 = set(data.columns.get_level_values(0))
-            level1 = set(data.columns.get_level_values(1))
-            known  = {"Close", "Open", "High", "Low", "Volume"}
-            if level0 & known:
-                data.columns = data.columns.get_level_values(0)
-            elif level1 & known:
-                data.columns = data.columns.get_level_values(1)
-        data = data.loc[:, ~data.columns.duplicated()]
-
+        data = _flatten_yf(data)
         if "Close" not in data.columns:
             return None
 
@@ -82,146 +99,121 @@ def _fetch_yahoo(ticker: str, period: str) -> pd.DataFrame | None:
 
 
 # ─────────────────────────────────────────────────────────────
-# Source 2 — Stooq (free, no API key)
+# Source 2 — Alpha Vantage
+# ─────────────────────────────────────────────────────────────
+
+def _to_av_symbol(ticker: str) -> str:
+    base = ticker.replace(".NS", "").replace(".BO", "")
+    return f"{base}.NSE"
+
+
+def _fetch_alpha_vantage(ticker: str, period: str) -> pd.DataFrame | None:
+    """Fetch from Alpha Vantage TIME_SERIES_DAILY_ADJUSTED."""
+    try:
+        symbol     = _to_av_symbol(ticker)
+        outputsize = "compact" if _PERIOD_DAYS.get(period, 180) <= 100 else "full"
+
+        for sym in [symbol, ticker.replace(".NS", "").replace(".BO", "")]:
+            url = (
+                f"https://www.alphavantage.co/query"
+                f"?function=TIME_SERIES_DAILY_ADJUSTED"
+                f"&symbol={sym}&outputsize={outputsize}&apikey={_AV_KEY}"
+            )
+            resp = requests.get(url, headers=_HEADERS, timeout=15)
+            if resp.status_code != 200:
+                continue
+
+            data = resp.json()
+            ts   = data.get("Time Series (Daily)", {})
+            if not ts:
+                continue
+
+            records = []
+            for date_str, vals in ts.items():
+                records.append({
+                    "Date":   pd.to_datetime(date_str),
+                    "Open":   float(vals.get("1. open",  0)),
+                    "High":   float(vals.get("2. high",  0)),
+                    "Low":    float(vals.get("3. low",   0)),
+                    "Close":  float(vals.get("5. adjusted close",
+                                             vals.get("4. close", 0))),
+                    "Volume": float(vals.get("6. volume", 0)),
+                })
+
+            df     = pd.DataFrame(records).set_index("Date").sort_index()
+            days   = _PERIOD_DAYS.get(period, 180)
+            cutoff = pd.Timestamp.today() - pd.Timedelta(days=days)
+            df     = df[df.index >= cutoff]
+
+            if not df.empty:
+                return df
+
+    except Exception:
+        pass
+    return None
+
+
+# ─────────────────────────────────────────────────────────────
+# Source 3 — Stooq via pandas_datareader
 # ─────────────────────────────────────────────────────────────
 
 def _fetch_stooq(ticker: str, period: str) -> pd.DataFrame | None:
-    """
-    Stooq provides free historical data for NSE stocks.
-    URL format: https://stooq.com/q/d/l/?s=RELIANCE.NS&i=d
-    """
+    """Fetch from Stooq using pandas_datareader."""
     try:
-        import requests
-        from io import StringIO
+        import pandas_datareader.data as web
+        from datetime import datetime, timedelta
+
+        days  = _PERIOD_DAYS.get(period, 180)
+        end   = datetime.today()
+        start = end - timedelta(days=days)
 
         # Stooq uses lowercase tickers
         symbol = ticker.lower()
-        url    = f"https://stooq.com/q/d/l/?s={symbol}&i=d"
+        df     = web.DataReader(symbol, "stooq", start, end)
 
-        resp = requests.get(url, timeout=10)
-        if resp.status_code != 200 or "No data" in resp.text:
+        if df is None or df.empty:
             return None
 
-        df = pd.read_csv(StringIO(resp.text))
-        if df.empty or "Close" not in df.columns:
-            return None
-
-        df["Date"] = pd.to_datetime(df["Date"])
-        df = df.set_index("Date").sort_index()
+        df = df.sort_index()
         df.columns = [c.strip().title() for c in df.columns]
 
-        # Filter to period
-        days = _PERIOD_DAYS.get(period, 180)
-        cutoff = pd.Timestamp.today() - pd.Timedelta(days=days)
-        df = df[df.index >= cutoff]
+        if "Close" not in df.columns:
+            return None
 
-        return df if not df.empty else None
+        return df.dropna(subset=["Close"])
 
     except Exception:
         return None
 
 
 # ─────────────────────────────────────────────────────────────
-# Source 3 — Alpha Vantage
-# ─────────────────────────────────────────────────────────────
-
-def _fetch_alpha_vantage(ticker: str, period: str) -> pd.DataFrame | None:
-    """
-    Alpha Vantage TIME_SERIES_DAILY_ADJUSTED endpoint.
-    Returns up to 5 years of daily data (outputsize=full).
-    """
-    try:
-        import requests
-
-        symbol     = _to_av_symbol(ticker)
-        outputsize = "compact" if _PERIOD_DAYS.get(period, 180) <= 100 else "full"
-        url        = (
-            f"https://www.alphavantage.co/query"
-            f"?function=TIME_SERIES_DAILY_ADJUSTED"
-            f"&symbol={symbol}"
-            f"&outputsize={outputsize}"
-            f"&apikey={_AV_KEY}"
-        )
-
-        resp = requests.get(url, timeout=15)
-        if resp.status_code != 200:
-            return None
-
-        data = resp.json()
-
-        # Alpha Vantage returns error messages in JSON
-        if "Error Message" in data or "Note" in data or "Information" in data:
-            # Try plain symbol without exchange suffix as fallback
-            base_symbol = ticker.replace(".NS", "").replace(".BO", "")
-            url2 = (
-                f"https://www.alphavantage.co/query"
-                f"?function=TIME_SERIES_DAILY_ADJUSTED"
-                f"&symbol={base_symbol}"
-                f"&outputsize={outputsize}"
-                f"&apikey={_AV_KEY}"
-            )
-            resp2 = requests.get(url2, timeout=15)
-            if resp2.status_code != 200:
-                return None
-            data = resp2.json()
-            if "Error Message" in data or "Note" in data or "Information" in data:
-                return None
-
-        ts = data.get("Time Series (Daily)", {})
-        if not ts:
-            return None
-
-        records = []
-        for date_str, vals in ts.items():
-            records.append({
-                "Date":   pd.to_datetime(date_str),
-                "Open":   float(vals.get("1. open",  0)),
-                "High":   float(vals.get("2. high",  0)),
-                "Low":    float(vals.get("3. low",   0)),
-                "Close":  float(vals.get("5. adjusted close", vals.get("4. close", 0))),
-                "Volume": float(vals.get("6. volume", 0)),
-            })
-
-        df = pd.DataFrame(records).set_index("Date").sort_index()
-
-        # Filter to requested period
-        days   = _PERIOD_DAYS.get(period, 180)
-        cutoff = pd.Timestamp.today() - pd.Timedelta(days=days)
-        df     = df[df.index >= cutoff]
-
-        return df if not df.empty else None
-
-    except Exception:
-        return None
-
-
-# ─────────────────────────────────────────────────────────────
-# Main Entry — Waterfall Fetch
+# Main Waterfall Entry Point
 # ─────────────────────────────────────────────────────────────
 
 _SOURCE_NAMES = {
     "yahoo":         "Yahoo Finance",
-    "stooq":         "Stooq",
     "alpha_vantage": "Alpha Vantage",
+    "stooq":         "Stooq",
 }
 
+
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_stock_data(ticker: str, period: str = DEFAULT_PERIOD) -> tuple[pd.DataFrame | None, str]:
+def fetch_stock_data(ticker: str, period: str = DEFAULT_PERIOD) -> tuple:
     """
-    Try each data source in order and return the first successful result.
-    Returns (DataFrame, source_name) or (None, "none") if all fail.
+    Try each data source in order. Returns (DataFrame, source_name).
+    Returns (None, 'none') only if all sources fail.
     """
     sources = [
         ("yahoo",         lambda: _fetch_yahoo(ticker, period)),
-        ("stooq",         lambda: _fetch_stooq(ticker, period)),
         ("alpha_vantage", lambda: _fetch_alpha_vantage(ticker, period)),
+        ("stooq",         lambda: _fetch_stooq(ticker, period)),
     ]
 
-    for source_key, fetch_fn in sources:
+    for key, fn in sources:
         try:
-            data = fetch_fn()
+            data = fn()
             if data is not None and not data.empty and "Close" in data.columns:
-                return data, _SOURCE_NAMES[source_key]
+                return data, _SOURCE_NAMES[key]
         except Exception:
             continue
 
@@ -233,22 +225,24 @@ def fetch_stock_data(ticker: str, period: str = DEFAULT_PERIOD) -> tuple[pd.Data
 # ─────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def fetch_portfolio_data(
-    tickers: tuple,
-    period:  str = PORTFOLIO_PERIOD,
-) -> tuple[pd.DataFrame | None, dict]:
+def fetch_portfolio_data(tickers: tuple, period: str = PORTFOLIO_PERIOD) -> tuple:
     """
-    Fetch close prices for multiple tickers using the waterfall strategy.
-    Returns (prices_df, source_map) where source_map = {ticker: source_name}.
+    Fetch close prices for multiple tickers.
+    Returns (prices_df, source_map {ticker: source_name}).
     """
     tickers    = list(tickers)
     prices     = {}
     source_map = {}
 
-    # ── Try Yahoo batch first (fastest) ───────────────────────
+    # Try Yahoo batch first
     try:
         import yfinance as yf
-        batch = yf.download(tickers, period=period, auto_adjust=True, progress=False)
+        session = _make_yf_session()
+        batch   = yf.download(
+            tickers, period=period,
+            auto_adjust=True, progress=False,
+            session=session,
+        )
         if batch is not None and not batch.empty:
             closes = _extract_batch_closes(batch, tickers)
             for t, s in closes.items():
@@ -258,9 +252,8 @@ def fetch_portfolio_data(
     except Exception:
         pass
 
-    # ── Fallback: fetch missing tickers individually ──────────
+    # Individual fallback for missing tickers
     missing = [t for t in tickers if t not in prices]
-
     for ticker in missing:
         data, source = fetch_stock_data(ticker, period)
         if data is not None and "Close" in data.columns:
@@ -275,16 +268,12 @@ def fetch_portfolio_data(
 
     df = pd.DataFrame(prices)
     df = df.ffill(limit=3).dropna(how="all").dropna(axis=1, how="all")
-
     return (df if not df.empty else None), source_map
 
 
 def _extract_batch_closes(data: pd.DataFrame, tickers: list) -> dict:
-    """Extract per-ticker Close series from a yfinance batch download."""
     result = {}
-
     if not isinstance(data.columns, pd.MultiIndex):
-        # Flat — only one ticker
         if "Close" in data.columns and len(tickers) == 1:
             result[tickers[0]] = pd.to_numeric(data["Close"], errors="coerce")
         return result
@@ -295,14 +284,12 @@ def _extract_batch_closes(data: pd.DataFrame, tickers: list) -> dict:
     for t in tickers:
         try:
             if "Close" in level0:
-                # (metric, ticker) format
                 close_df = data["Close"]
                 if isinstance(close_df, pd.DataFrame) and t in close_df.columns:
                     result[t] = pd.to_numeric(close_df[t], errors="coerce")
                 elif isinstance(close_df, pd.Series):
                     result[tickers[0]] = pd.to_numeric(close_df, errors="coerce")
             elif t in level0 and "Close" in level1:
-                # (ticker, metric) format
                 result[t] = pd.to_numeric(data[t]["Close"], errors="coerce")
         except Exception:
             continue
