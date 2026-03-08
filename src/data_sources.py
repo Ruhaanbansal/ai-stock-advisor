@@ -70,20 +70,30 @@ def _cutoff(period: str) -> pd.Timestamp:
 
 def _fetch_yf_curl(ticker: str, period: str) -> pd.DataFrame | None:
     """
-    Let yfinance manage curl_cffi internally — newer yfinance (>=0.2.55)
-    refuses external sessions and handles TLS impersonation itself.
+    Let yfinance manage curl_cffi internally.
+    Auto-retries with .BO suffix if .NS returns 404 (Yahoo sometimes
+    delists/renames NSE symbols but keeps BSE equivalent).
     """
-    try:
-        import yfinance as yf
-        # Do NOT pass session — yfinance uses curl_cffi internally
-        tk   = yf.Ticker(ticker)
-        data = tk.history(period=period, auto_adjust=True)
-        if _valid(data):
-            data = _flatten(data)
-            logger.info(f"yfinance internal OK: {ticker} → {len(data)} rows")
-            return data.dropna(subset=["Close"])
-    except Exception as e:
-        logger.warning(f"yfinance internal [{ticker}]: {e}")
+    import yfinance as yf
+
+    # Build list of tickers to try
+    variants = [ticker]
+    if ticker.endswith(".NS"):
+        variants.append(ticker.replace(".NS", ".BO"))  # try BSE
+    elif ticker.endswith(".BO"):
+        variants.append(ticker.replace(".BO", ".NS"))  # try NSE
+
+    for t in variants:
+        try:
+            tk   = yf.Ticker(t)
+            data = tk.history(period=period, auto_adjust=True)
+            if _valid(data):
+                data = _flatten(data)
+                logger.info(f"yfinance internal OK: {t} → {len(data)} rows")
+                return data.dropna(subset=["Close"])
+        except Exception as e:
+            logger.warning(f"yfinance internal [{t}]: {e}")
+            continue
     return None
 
 

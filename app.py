@@ -214,14 +214,14 @@ with st.sidebar:
             for idx, s in enumerate(suggestions):
                 btn_label = f"{s['name']}  `{s['ticker']}`"
                 btn_key   = f"sug_{q_hash}_{idx}_{s['ticker'].replace('.','_')}"
-                if st.button(btn_label, key=btn_key, use_container_width=True):
+                if st.button(btn_label, key=btn_key, width='stretch'):
                     st.session_state.selected_stock      = s["ticker"]
                     st.session_state.selected_stock_name = s["name"]
                     st.rerun()
 
         # Search button — key includes query so it never clashes with presets
         search_btn_key = f"search_btn_{abs(hash(search_query)) % 100000}"
-        if st.button("🔎 Search", key=search_btn_key, use_container_width=True):
+        if st.button("🔎 Search", key=search_btn_key, width='stretch'):
             with st.spinner("Searching…"):
                 ticker, name = resolve_ticker(search_query)
             if ticker:
@@ -244,7 +244,7 @@ with st.sidebar:
     for i, ticker in enumerate(STOCK_LIST):
         label = STOCK_LABELS.get(ticker, ticker).split()[0]
         btn_key = f"preset_{i}_{ticker.replace('.','_')}"
-        if preset_cols[i % 2].button(label, key=btn_key, use_container_width=True):
+        if preset_cols[i % 2].button(label, key=btn_key, width='stretch'):
             st.session_state.selected_stock      = ticker
             st.session_state.selected_stock_name = STOCK_LABELS.get(ticker, ticker)
             st.rerun()
@@ -390,7 +390,7 @@ if page == "📊 Dashboard":
                           xaxis_title="Date", yaxis_title="Price (₹)",
                           legend=dict(orientation="h", y=1.02),
                           margin=dict(l=0,r=0,t=10,b=0))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
     with bb_tab:
         if "BB_Upper" in extended:
@@ -406,7 +406,7 @@ if page == "📊 Dashboard":
                                       name="Close", line=dict(color="white", width=1.5)))
             fig2.update_layout(template="plotly_dark", height=400,
                                margin=dict(l=0,r=0,t=10,b=0))
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width='stretch')
         else:
             st.info("Not enough data for Bollinger Bands.")
 
@@ -422,7 +422,7 @@ if page == "📊 Dashboard":
                                       name="Signal", line=dict(color="#ffb347", dash="dot")))
             fig3.update_layout(template="plotly_dark", height=380,
                                margin=dict(l=0,r=0,t=10,b=0))
-            st.plotly_chart(fig3, use_container_width=True)
+            st.plotly_chart(fig3, width='stretch')
         else:
             st.info("Not enough data for MACD.")
 
@@ -444,7 +444,7 @@ if page == "📊 Dashboard":
         ))
         vol_fig.update_layout(template="plotly_dark", height=200,
                                margin=dict(l=0,r=0,t=10,b=0))
-        st.plotly_chart(vol_fig, use_container_width=True)
+        st.plotly_chart(vol_fig, width='stretch')
 
 
 # ─────────────────────────────────────────────────────────────
@@ -494,7 +494,7 @@ elif page == "🧠 AI Prediction":
             height=220, paper_bgcolor="rgba(0,0,0,0)",
             margin=dict(l=20,r=20,t=40,b=10)
         )
-        st.plotly_chart(gauge, use_container_width=True)
+        st.plotly_chart(gauge, width='stretch')
 
         # Risk metrics
         st.markdown("**Risk Metrics**")
@@ -541,7 +541,7 @@ elif page == "🧠 AI Prediction":
                 imp   = compute_feature_importance(model, scaler, close_prices)
                 s_fig = shap_chart(imp)
             if imp:
-                st.plotly_chart(s_fig, use_container_width=True)
+                st.plotly_chart(s_fig, width='stretch')
             else:
                 st.info("Not enough data to compute feature importance.")
 
@@ -601,7 +601,7 @@ elif page == "📰 Market Intelligence":
         rsi_fig.update_layout(template="plotly_dark", height=280,
                               yaxis=dict(range=[0,100]),
                               margin=dict(l=0,r=0,t=10,b=0))
-        st.plotly_chart(rsi_fig, use_container_width=True)
+        st.plotly_chart(rsi_fig, width='stretch')
 
 
 # ─────────────────────────────────────────────────────────────
@@ -648,7 +648,7 @@ elif page == "💼 Portfolio Optimizer":
             label_visibility="collapsed",
         )
     with s_col2:
-        add_clicked = st.button("➕ Add Stock", key="pf_add_btn", use_container_width=True)
+        add_clicked = st.button("➕ Add Stock", key="pf_add_btn", width='stretch')
 
     # Handle add button
     if add_clicked and pf_query.strip():
@@ -683,7 +683,7 @@ elif page == "💼 Portfolio Optimizer":
             for idx, s in enumerate(sugg):
                 already = s["ticker"] in st.session_state.pf_stocks
                 label   = f"{'✓ ' if already else ''}{s['name'].split()[0]} ({s['ticker'].replace('.NS','')})"
-                if sugg_cols[idx].button(label, key=f"pf_sugg_{q_h}_{idx}", use_container_width=True, disabled=already):
+                if sugg_cols[idx].button(label, key=f"pf_sugg_{q_h}_{idx}", width='stretch', disabled=already):
                     st.session_state.pf_stocks[s["ticker"]] = s["name"]
                     st.session_state.pf_error = ""
                     st.rerun()
@@ -704,7 +704,7 @@ elif page == "💼 Portfolio Optimizer":
     sec_cols = st.columns(len(SECTORS))
     for col, (sector_label, stocks_in_sector) in zip(sec_cols, SECTORS.items()):
         with col:
-            if col.button(sector_label, key=f"sec_{sector_label}", use_container_width=True):
+            if col.button(sector_label, key=f"sec_{sector_label}", width='stretch'):
                 for t, n in stocks_in_sector:
                     st.session_state.pf_stocks[t] = n
                 st.rerun()
@@ -728,7 +728,7 @@ elif page == "💼 Portfolio Optimizer":
                     f"</div>",
                     unsafe_allow_html=True,
                 )
-                if st.button("✕ Remove", key=f"rm_{idx}_{t.replace('.','_')}", use_container_width=True):
+                if st.button("✕ Remove", key=f"rm_{idx}_{t.replace('.','_')}", width='stretch'):
                     del st.session_state.pf_stocks[t]
                     st.rerun()
     else:
@@ -805,7 +805,7 @@ elif page == "💼 Portfolio Optimizer":
 
     c1, c2 = st.columns([1.2, 1])
     with c1:
-        st.plotly_chart(pie_fig, use_container_width=True)
+        st.plotly_chart(pie_fig, width='stretch')
     with c2:
         st.markdown("**Allocation Breakdown**")
         # Rename Stock column to readable name for display
@@ -821,7 +821,7 @@ elif page == "💼 Portfolio Optimizer":
                 "Volatility (%)":  "{:.2f}%",
                 "Sharpe":          "{:.2f}",
             }).background_gradient(subset=["Weight (%)"], cmap="Greens"),
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
         )
 
@@ -837,7 +837,7 @@ elif page == "💼 Portfolio Optimizer":
         labels={"Sharpe": "Sharpe Ratio"},
     )
     ef_fig.update_layout(template="plotly_dark", margin=dict(l=0,r=0,t=10,b=0))
-    st.plotly_chart(ef_fig, use_container_width=True)
+    st.plotly_chart(ef_fig, width='stretch')
 
     # Correlation heatmap
     st.markdown("#### Correlation Matrix")
@@ -849,7 +849,7 @@ elif page == "💼 Portfolio Optimizer":
         height=350,
     )
     heat.update_layout(template="plotly_dark", margin=dict(l=0,r=0,t=10,b=0))
-    st.plotly_chart(heat, use_container_width=True)
+    st.plotly_chart(heat, width='stretch')
 
 
 # ─────────────────────────────────────────────────────────────
@@ -878,7 +878,7 @@ elif page == "🔁 Backtesting":
         legend=dict(orientation="h", y=1.05),
         margin=dict(l=0,r=0,t=10,b=0),
     )
-    st.plotly_chart(bt_fig, use_container_width=True)
+    st.plotly_chart(bt_fig, width='stretch')
 
     # Metrics table
     st.markdown("#### Strategy Performance")
@@ -890,7 +890,7 @@ elif page == "🔁 Backtesting":
             "Max Drawdown": f"{m['max_drawdown']:.2f}%",
             "Sharpe Ratio": f"{m['sharpe_ratio']:.3f}",
         })
-    st.dataframe(pd.DataFrame(rows).set_index("Strategy"), use_container_width=True)
+    st.dataframe(pd.DataFrame(rows).set_index("Strategy"), width='stretch')
 
 
 # ─────────────────────────────────────────────────────────────
@@ -902,7 +902,7 @@ elif page == "🔬 Model Evaluation":
     with st.spinner("Evaluating model…"):
         evaluation = evaluate_model(close_prices, model, scaler)
 
-    st.plotly_chart(evaluation["chart"], use_container_width=True)
+    st.plotly_chart(evaluation["chart"], width='stretch')
 
     e1, e2, e3, e4 = st.columns(4)
     e1.metric("MAE",        f"₹{evaluation['mae']:.2f}")
@@ -931,7 +931,7 @@ elif page == "🔬 Model Evaluation":
         yaxis_title="Residual (₹)",
         margin=dict(l=0,r=0,t=10,b=0),
     )
-    st.plotly_chart(res_fig, use_container_width=True)
+    st.plotly_chart(res_fig, width='stretch')
 
     # Residual distribution
     hist_fig = px.histogram(
@@ -941,4 +941,4 @@ elif page == "🔬 Model Evaluation":
         height=260,
     )
     hist_fig.update_layout(template="plotly_dark", margin=dict(l=0,r=0,t=10,b=0))
-    st.plotly_chart(hist_fig, use_container_width=True)
+    st.plotly_chart(hist_fig, width='stretch')
