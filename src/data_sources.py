@@ -70,24 +70,20 @@ def _cutoff(period: str) -> pd.Timestamp:
 
 def _fetch_yf_curl(ticker: str, period: str) -> pd.DataFrame | None:
     """
-    Uses curl_cffi to impersonate Chrome's TLS fingerprint.
-    This is the most reliable bypass for Yahoo Finance on cloud IPs.
-    curl_cffi is already in yfinance's dependencies.
+    Let yfinance manage curl_cffi internally — newer yfinance (>=0.2.55)
+    refuses external sessions and handles TLS impersonation itself.
     """
     try:
-        from curl_cffi import requests as curl_requests
         import yfinance as yf
-
-        session = curl_requests.Session(impersonate="chrome120")
-        tk      = yf.Ticker(ticker, session=session)
-        data    = tk.history(period=period, auto_adjust=True)
-
+        # Do NOT pass session — yfinance uses curl_cffi internally
+        tk   = yf.Ticker(ticker)
+        data = tk.history(period=period, auto_adjust=True)
         if _valid(data):
             data = _flatten(data)
-            logger.info(f"curl_cffi OK: {ticker} → {len(data)} rows")
+            logger.info(f"yfinance internal OK: {ticker} → {len(data)} rows")
             return data.dropna(subset=["Close"])
     except Exception as e:
-        logger.warning(f"curl_cffi [{ticker}]: {e}")
+        logger.warning(f"yfinance internal [{ticker}]: {e}")
     return None
 
 
@@ -96,21 +92,16 @@ def _fetch_yf_curl(ticker: str, period: str) -> pd.DataFrame | None:
 # ─────────────────────────────────────────────────────────────
 
 def _fetch_yf_requests(ticker: str, period: str) -> pd.DataFrame | None:
+    """yfinance download fallback — no session passed."""
     try:
-        import requests, yfinance as yf
-        session = requests.Session()
-        session.headers.update(_BROWSER_HEADERS)
-
-        tk   = yf.Ticker(ticker, session=session)
-        data = tk.history(period=period, auto_adjust=True)
-        if not _valid(data):
-            data = yf.download(ticker, period=period,
-                               auto_adjust=True, progress=False, session=session)
+        import yfinance as yf
+        data = yf.download(ticker, period=period,
+                           auto_adjust=True, progress=False)
         if _valid(data):
             data = _flatten(data)
             return data.dropna(subset=["Close"])
     except Exception as e:
-        logger.warning(f"yf_requests [{ticker}]: {e}")
+        logger.warning(f"yf_download [{ticker}]: {e}")
     return None
 
 
@@ -154,31 +145,119 @@ def _fetch_alpha_vantage(ticker: str, period: str) -> pd.DataFrame | None:
 
 
 # ─────────────────────────────────────────────────────────────
-# Source 4 — Stooq direct CSV
+# Source 4 — NSE India API (free, no key, works on cloud)
+# ─────────────────────────────────────────────────────────────
+
+def _fetch_nse(ticker: str, period: str) -> pd.DataFrame | None:
+    """
+    NSE India's public API — completely free, no API key needed.
+    Works reliably from Streamlit Cloud since it's an Indian govt API.
+    """
+    try:
+        import requests
+        base    = ticker.replace(".NS","").replace(".BO","").upper()
+        days    = _PERIOD_DAYS.get(period, 365)
+        end_dt  = datetime.today()
+        start_dt = end_dt - timedelta(days=days)
+
+        # NSE historical data API
+        end_str   = end_dt.strftime("%d-%m-%Y")
+        start_str = start_dt.strftime("%d-%m-%Y")
+
+        # NSE requires a cookie — first hit the main page
+        session = requests.Session()
+        session.headers.update({
+            **_BROWSER_HEADERS,
+            "Referer": "https://www.nseindia.com/",
+        })
+        session.get("https://www.nseindia.com", timeout=10)
+
+        url  = (f"https://www.nseindia.com/api/historical/cm/equity"
+                f"?symbol={base}&series=[%22EQ%22]"
+                f"&from={start_str}&to={end_str}&csv=true")
+        r    = session.get(url, timeout=15)
+
+        if r.status_code != 200 or len(r.text) < 100:
+            return None
+
+        from io import StringIO
+        df = pd.read_csv(StringIO(r.text))
+        if df.empty:
+            return None
+
+        # NSE column names vary — normalise
+        col_map = {}
+        for c in df.columns:
+            cl = c.strip().lower()
+            if "date" in cl:       col_map[c] = "Date"
+            elif cl in ("close","ltp","last"): col_map[c] = "Close"
+            elif "open" in cl:     col_map[c] = "Open"
+            elif "high" in cl:     col_map[c] = "High"
+            elif "low" in cl:      col_map[c] = "Low"
+            elif "volume" in cl or "traded qty" in cl: col_map[c] = "Volume"
+
+        df = df.rename(columns=col_map)
+        if "Date" not in df.columns or "Close" not in df.columns:
+            return None
+
+        df["Date"]  = pd.to_datetime(df["Date"], dayfirst=True, errors="coerce")
+        df["Close"] = pd.to_numeric(
+            df["Close"].astype(str).str.replace(",",""), errors="coerce"
+        )
+        df = df.dropna(subset=["Date","Close"]).set_index("Date").sort_index()
+
+        if _valid(df):
+            logger.info(f"NSE India OK: {base} → {len(df)} rows")
+            return df
+
+    except Exception as e:
+        logger.warning(f"NSE India [{ticker}]: {e}")
+    return None
+
+
+# ─────────────────────────────────────────────────────────────
+# Source 5 — Stooq direct CSV
 # ─────────────────────────────────────────────────────────────
 
 def _fetch_stooq(ticker: str, period: str) -> pd.DataFrame | None:
+    """
+    Stooq supports NSE stocks using the .ns suffix in lowercase.
+    e.g. RELIANCE.NS → reliance.ns on stooq
+    """
     try:
         import requests
         from io import StringIO
         days  = _PERIOD_DAYS.get(period, 365)
         end   = datetime.today().strftime("%Y%m%d")
         start = (datetime.today() - timedelta(days=days)).strftime("%Y%m%d")
-        sym   = ticker.lower()
 
-        url  = f"https://stooq.com/q/d/l/?s={sym}&d1={start}&d2={end}&i=d"
-        r    = requests.get(url, headers=_BROWSER_HEADERS, timeout=15)
-        if r.status_code != 200 or len(r.text) < 50 or "No data" in r.text:
-            return None
+        # Try multiple symbol formats
+        base = ticker.replace(".NS","").replace(".BO","").lower()
+        variants = [
+            ticker.lower(),          # reliance.ns
+            f"{base}.ns",            # reliance.ns
+            f"{base}.in",            # reliance.in (India format)
+        ]
 
-        df = pd.read_csv(StringIO(r.text))
-        if df.empty or "Close" not in df.columns:
-            return None
-        df["Date"] = pd.to_datetime(df["Date"])
-        df = df.set_index("Date").sort_index()
-        if _valid(df):
-            logger.info(f"Stooq OK: {sym} → {len(df)} rows")
-            return df
+        for sym in variants:
+            url = f"https://stooq.com/q/d/l/?s={sym}&d1={start}&d2={end}&i=d"
+            r   = requests.get(url, headers=_BROWSER_HEADERS, timeout=15)
+
+            if r.status_code != 200 or len(r.text) < 50:
+                continue
+            if "No data" in r.text or "Przekroczon" in r.text:
+                continue
+
+            df = pd.read_csv(StringIO(r.text))
+            if df.empty or "Close" not in df.columns:
+                continue
+
+            df["Date"] = pd.to_datetime(df["Date"])
+            df = df.set_index("Date").sort_index()
+            if _valid(df):
+                logger.info(f"Stooq OK: {sym} → {len(df)} rows")
+                return df
+
     except Exception as e:
         logger.warning(f"Stooq [{ticker}]: {e}")
     return None
@@ -230,6 +309,7 @@ def _fetch_csv_fallback(ticker: str, period: str) -> pd.DataFrame | None:
 # ─────────────────────────────────────────────────────────────
 
 _SOURCE_NAMES = {
+    "nse":           "NSE India",
     "curl":          "Yahoo Finance",
     "yf_requests":   "Yahoo Finance",
     "alpha_vantage": "Alpha Vantage",
@@ -241,10 +321,11 @@ _SOURCE_NAMES = {
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_stock_data(ticker: str, period: str = "1y") -> tuple:
     sources = [
-        ("curl",          lambda: _fetch_yf_curl(ticker, period)),
-        ("yf_requests",   lambda: _fetch_yf_requests(ticker, period)),
+        ("nse",           lambda: _fetch_nse(ticker, period)),
         ("alpha_vantage", lambda: _fetch_alpha_vantage(ticker, period)),
         ("stooq",         lambda: _fetch_stooq(ticker, period)),
+        ("curl",          lambda: _fetch_yf_curl(ticker, period)),
+        ("yf_requests",   lambda: _fetch_yf_requests(ticker, period)),
         ("csv",           lambda: _fetch_csv_fallback(ticker, period)),
     ]
     for key, fn in sources:
@@ -267,13 +348,11 @@ def fetch_portfolio_data(tickers: tuple, period: str = "1y") -> tuple:
     prices     = {}
     source_map = {}
 
-    # Try batch Yahoo first
+    # Try batch Yahoo first (no session — let yfinance handle internally)
     try:
-        from curl_cffi import requests as curl_requests
         import yfinance as yf
-        session = curl_requests.Session(impersonate="chrome120")
-        batch   = yf.download(tickers, period=period,
-                               auto_adjust=True, progress=False, session=session)
+        batch = yf.download(tickers, period=period,
+                            auto_adjust=True, progress=False)
         if batch is not None and not batch.empty:
             closes = _extract_batch_closes(batch, tickers)
             for t, s in closes.items():
