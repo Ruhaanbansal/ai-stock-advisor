@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 # ── Project modules ───────────────────────────────────────────
 from src.config import (
     APP_TITLE, APP_ICON, CURRENCY, STOCK_LIST, STOCK_LABELS,
-    FEATURE_NAMES, SEQUENCE_LENGTH,
+    SEQUENCE_LENGTH,
 )
 from src.stock_search  import resolve_ticker, get_suggestions
 from src.data_sources  import fetch_stock_data, fetch_portfolio_data
@@ -21,7 +21,7 @@ from src.model        import train_lstm_model, predict_next_price, forecast_pric
 from src.features     import create_extended_features
 from src.sentiment    import get_news_sentiment, get_stock_news
 from src.risk         import calculate_risk_metrics
-from src.explainability import generate_explanation, shap_explanation, shap_chart, lime_explanation
+from src.explainability import get_technical_signals, compute_feature_importance, shap_chart
 from src.portfolio    import recommend_portfolio, optimize_portfolio, generate_efficient_frontier
 from src.backtest     import run_backtest
 from src.evaluation   import evaluate_model
@@ -521,26 +521,27 @@ elif page == "🧠 AI Prediction":
         st.markdown("---")
 
         st.markdown("**Model Explainability**")
-        exp_tab1, exp_tab2, exp_tab3 = st.tabs(["Rule-based", "SHAP", "LIME"])
-
-        X_input = last_sequence.reshape(1, SEQUENCE_LENGTH, last_sequence.shape[1])
+        exp_tab1, exp_tab2 = st.tabs(["Technical Signals", "Feature Importance"])
 
         with exp_tab1:
-            explanations = generate_explanation(close_prices, predicted_price)
-            for e in explanations:
-                st.markdown(f"• {e}")
+            signals = get_technical_signals(close_prices)
+            if signals:
+                for indicator, (value, signal) in signals.items():
+                    color = {"Overbought":"🔴","Oversold":"🟢","Bullish":"🟢",
+                             "Bearish":"🔴","Golden Cross ↑":"🟢","Death Cross ↓":"🔴"
+                             }.get(signal, "🟡")
+                    st.markdown(f"{color} **{indicator}**: `{value}` — {signal}")
+            else:
+                st.info("Not enough data to compute signals.")
 
         with exp_tab2:
-            imp    = shap_explanation(model, X_input, FEATURE_NAMES)
-            s_fig  = shap_chart(imp)
-            st.plotly_chart(s_fig, use_container_width=True)
-
-        with exp_tab3:
-            lime_res = lime_explanation(model, X_input, FEATURE_NAMES)
-            for feat, weight in lime_res:
-                icon  = "🟢" if weight > 0 else "🔴"
-                label = "increases" if weight > 0 else "decreases"
-                st.markdown(f"{icon} **{feat}** {label} prediction (weight: {weight:.4f})")
+            with st.spinner("Computing feature importance…"):
+                imp   = compute_feature_importance(model, scaler, close_prices)
+                s_fig = shap_chart(imp)
+            if imp:
+                st.plotly_chart(s_fig, use_container_width=True)
+            else:
+                st.info("Not enough data to compute feature importance.")
 
 
 # ─────────────────────────────────────────────────────────────
