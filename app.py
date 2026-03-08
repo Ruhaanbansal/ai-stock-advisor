@@ -280,6 +280,8 @@ with st.sidebar:
 # ══════════════════════════════════════════════════════════════
 
 with st.spinner("Fetching market data…"):
+    import logging
+    logging.basicConfig(level=logging.INFO)
     data = load_stock_data(stock, period=period)
 
 if data is None or data.empty:
