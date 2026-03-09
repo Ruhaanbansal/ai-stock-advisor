@@ -154,7 +154,11 @@ def analyse_chart(
     api_key = get_api_key()
     if not api_key:
         # No API key — use rule-based fallback silently
-        from src.chart_analyzer_fallback import analyse_chart_fallback
+        from src.chart_analyzer_fallback import analyse_chart_fallback  # noqa
+        try:
+            from chart_analyzer_fallback import analyse_chart_fallback
+        except ImportError:
+            from src.chart_analyzer_fallback import analyse_chart_fallback
         result = analyse_chart_fallback(image_bytes, filename)
         result["_fallback"] = True
         result["_fallback_reason"] = "No ANTHROPIC_API_KEY found — using rule-based analysis."
@@ -220,7 +224,10 @@ def analyse_chart(
         # Credit exhausted or auth error → use fallback
         if ("credit" in err.lower() or "balance" in err.lower()
                 or "401" in err or "402" in err):
-            from src.chart_analyzer_fallback import analyse_chart_fallback
+            try:
+                from chart_analyzer_fallback import analyse_chart_fallback
+            except ImportError:
+                from src.chart_analyzer_fallback import analyse_chart_fallback
             result = analyse_chart_fallback(image_bytes, filename)
             result["_fallback"] = True
             result["_fallback_reason"] = (
