@@ -23,6 +23,8 @@ from src.sentiment    import get_news_sentiment, get_stock_news
 from src.risk         import calculate_risk_metrics
 from src.explainability  import get_technical_signals, compute_feature_importance, shap_chart
 from src.ipo_predictor   import load_ipo_model, predict_ipo, get_current_nifty_trend, find_similar_ipos, SECTORS
+from src.chart_analyzer   import (analyse_chart, get_api_key,
+                                   rec_style, trend_icon, pattern_type_color)
 from src.fii_dii_analyzer import (load_fii_dii_data, load_fii_dii_model,
                                    predict_next_day, detect_patterns,
                                    fetch_live_fii_dii, monthly_summary,
@@ -182,7 +184,7 @@ with st.sidebar:
         "Navigate",
         ["📊 Dashboard", "🧠 AI Prediction", "📰 Market Intelligence",
          "💼 Portfolio Optimizer", "🔁 Backtesting", "🔬 Model Evaluation",
-         "🚀 IPO Predictor", "📡 FII/DII Tracker"],
+         "🚀 IPO Predictor", "📡 FII/DII Tracker", "📸 Chart Analyzer"],
         label_visibility="collapsed",
     )
 
@@ -1648,3 +1650,321 @@ elif page == "📡 FII/DII Tracker":
                 "This is not financial advice.",
                 icon=None,
             )
+
+
+# ══════════════════════════════════════════════════════════════
+# 📸 CHART ANALYZER
+# ══════════════════════════════════════════════════════════════
+elif page == "📸 Chart Analyzer":
+
+    st.markdown("""
+    <div style='margin-bottom:24px'>
+        <h2 style='margin:0;font-size:1.6rem;font-weight:700;
+                   background:linear-gradient(135deg,#00d4aa,#6c63ff);
+                   -webkit-background-clip:text;-webkit-text-fill-color:transparent'>
+            📸 AI Chart Analyzer
+        </h2>
+        <p style='color:#7a8299;margin:4px 0 0;font-size:0.9rem'>
+            Upload any stock chart screenshot — get instant AI technical analysis
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── API key check ─────────────────────────────────────────
+    if not get_api_key():
+        st.error(
+            "🔑 **Claude API key not found.**\n\n"
+            "Add `ANTHROPIC_API_KEY` to your Streamlit Cloud secrets:\n"
+            "Manage App → Settings → Secrets → add:\n"
+            "```toml\nANTHROPIC_API_KEY = \"sk-ant-your-key-here\"\n```"
+        )
+        st.stop()
+
+    # ── Upload section ────────────────────────────────────────
+    st.markdown("#### 📤 Upload Chart Screenshot")
+    st.caption("Supports screenshots from Zerodha, Groww, TradingView, Google Finance, NSE, or any charting platform")
+
+    col_up, col_ctx = st.columns([2, 1])
+
+    with col_up:
+        uploaded = st.file_uploader(
+            "Drop chart screenshot here",
+            type=["png", "jpg", "jpeg", "webp"],
+            help="Upload a screenshot of any stock chart",
+            label_visibility="collapsed",
+        )
+
+    with col_ctx:
+        extra_context = st.text_area(
+            "Optional context",
+            placeholder="e.g. This is Reliance Industries daily chart, I am a swing trader looking for entry points...",
+            height=120,
+            help="Give the AI extra context for better analysis",
+        )
+
+    if uploaded:
+        # Show uploaded image
+        st.image(uploaded, caption=f"Uploaded: {uploaded.name}",
+                 use_container_width=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        analyse_btn = st.button("🔍 Analyse Chart", type="primary")
+
+        if analyse_btn:
+            with st.spinner("🧠 Claude is analysing your chart… (10-20 seconds)"):
+                image_bytes = uploaded.read()
+                result      = analyse_chart(image_bytes, uploaded.name, extra_context)
+
+            # ── Error handling ────────────────────────────────
+            if "error" in result:
+                st.error(f"❌ {result['error']}")
+                st.stop()
+
+            st.markdown("---")
+            st.markdown("## 📊 Analysis Results")
+
+            # ── Header: stock name + timeframe ────────────────
+            stock_name = result.get("stock_name", "Unknown")
+            timeframe  = result.get("timeframe",  "Unknown")
+            cur_price  = result.get("current_price")
+
+            h1, h2, h3 = st.columns(3)
+            h1.markdown(f"""<div style='background:#111520;border:1px solid #1e2538;
+                border-radius:12px;padding:14px;text-align:center'>
+                <div style='font-size:11px;color:#7a8299'>STOCK</div>
+                <div style='font-size:1.1rem;font-weight:700;color:#e4e8f0'>
+                    {stock_name}</div></div>""", unsafe_allow_html=True)
+            h2.markdown(f"""<div style='background:#111520;border:1px solid #1e2538;
+                border-radius:12px;padding:14px;text-align:center'>
+                <div style='font-size:11px;color:#7a8299'>TIMEFRAME</div>
+                <div style='font-size:1.1rem;font-weight:700;color:#e4e8f0'>
+                    {timeframe}</div></div>""", unsafe_allow_html=True)
+            h3.markdown(f"""<div style='background:#111520;border:1px solid #1e2538;
+                border-radius:12px;padding:14px;text-align:center'>
+                <div style='font-size:11px;color:#7a8299'>PRICE</div>
+                <div style='font-size:1.1rem;font-weight:700;color:#e4e8f0'>
+                    {f"₹{cur_price}" if cur_price else "—"}</div></div>""",
+                unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # ── Recommendation (big card) ─────────────────────
+            rec    = result.get("recommendation", {})
+            action = rec.get("action", "Hold")
+            conf   = rec.get("confidence", 50)
+            color, icon = rec_style(action)
+
+            st.markdown(f"""
+            <div style='background:linear-gradient(135deg,{color}22,{color}11);
+                        border:2px solid {color}55;border-radius:16px;
+                        padding:24px 32px;text-align:center;margin-bottom:24px'>
+                <div style='font-size:2.5rem'>{icon}</div>
+                <div style='font-size:2rem;font-weight:800;color:{color};margin:6px 0'>
+                    {action}
+                </div>
+                <div style='color:#7a8299;font-size:0.85rem'>
+                    AI Confidence: <strong style='color:#e4e8f0'>{conf}%</strong>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Confidence bar
+            st.progress(conf / 100)
+
+            # Entry / SL / Target
+            r1, r2, r3 = st.columns(3)
+            r1.metric("📍 Entry Zone",  rec.get("entry_zone",  "—"))
+            r2.metric("🛡️ Stop Loss",   rec.get("stop_loss",   "—"))
+            r3.metric("🎯 Target",       rec.get("target",      "—"))
+
+            st.markdown(
+                f"<div style='background:#111520;border-left:3px solid {color};"
+                f"padding:12px 16px;border-radius:0 8px 8px 0;margin:16px 0;"
+                f"color:#e4e8f0;font-size:0.9rem'>{rec.get('rationale','')}</div>",
+                unsafe_allow_html=True
+            )
+
+            st.markdown("---")
+
+            # ── Trend + Momentum ──────────────────────────────
+            col_t, col_m = st.columns(2)
+
+            with col_t:
+                trend = result.get("trend", {})
+                t_dir = trend.get("direction", "Unknown")
+                t_str = trend.get("strength",  "Unknown")
+                t_col = ("#00d4aa" if t_dir == "Bullish"
+                         else "#ff6b6b" if t_dir == "Bearish" else "#ffb347")
+                st.markdown(f"""
+                <div style='background:#111520;border:1px solid #1e2538;
+                            border-radius:12px;padding:18px;height:160px'>
+                    <div style='font-size:12px;color:#7a8299;margin-bottom:8px'>
+                        📈 TREND
+                    </div>
+                    <div style='font-size:1.4rem;font-weight:700;color:{t_col}'>
+                        {trend_icon(t_dir)} {t_dir}
+                    </div>
+                    <div style='font-size:12px;color:#ffb347;margin:4px 0'>
+                        Strength: {t_str}
+                    </div>
+                    <div style='font-size:12px;color:#7a8299;margin-top:6px'>
+                        {trend.get("description","")}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with col_m:
+                mom    = result.get("momentum", {})
+                m_sig  = mom.get("signal", "Neutral")
+                m_col  = ("#00d4aa" if m_sig == "Bullish"
+                          else "#ff6b6b" if m_sig == "Bearish" else "#ffb347")
+                rsi    = mom.get("rsi_value")
+                macd   = mom.get("macd_signal", "")
+                st.markdown(f"""
+                <div style='background:#111520;border:1px solid #1e2538;
+                            border-radius:12px;padding:18px;height:160px'>
+                    <div style='font-size:12px;color:#7a8299;margin-bottom:8px'>
+                        ⚡ MOMENTUM
+                    </div>
+                    <div style='font-size:1.4rem;font-weight:700;color:{m_col}'>
+                        {m_sig}
+                    </div>
+                    <div style='font-size:12px;color:#7a8299;margin:4px 0'>
+                        {f"RSI: {rsi}" if rsi else "RSI: not visible"} ·
+                        {f"MACD: {macd}" if macd else ""}
+                    </div>
+                    <div style='font-size:12px;color:#7a8299;margin-top:6px'>
+                        {mom.get("description","")}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # ── Chart Patterns ────────────────────────────────
+            patterns = result.get("patterns", [])
+            if patterns:
+                st.markdown("#### 🔷 Chart Patterns Detected")
+                pcols = st.columns(min(len(patterns), 3))
+                for i, p in enumerate(patterns[:3]):
+                    ptype = p.get("type", "")
+                    pcol  = pattern_type_color(ptype)
+                    rel   = p.get("reliability", "Medium")
+                    rel_c = ("#00d4aa" if rel == "High"
+                             else "#ffb347" if rel == "Medium" else "#ff6b6b")
+                    pcols[i].markdown(f"""
+                    <div style='background:#111520;border:1px solid {pcol}44;
+                                border-radius:12px;padding:16px;text-align:center'>
+                        <div style='font-weight:700;color:#e4e8f0;margin-bottom:6px'>
+                            {p.get("name","")}
+                        </div>
+                        <div style='font-size:11px;color:{pcol};margin-bottom:4px'>
+                            {ptype}
+                        </div>
+                        <div style='font-size:11px;color:{rel_c}'>
+                            Reliability: {rel}
+                        </div>
+                        <div style='font-size:11px;color:#7a8299;margin-top:6px'>
+                            {p.get("description","")}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            # ── Candlestick Patterns ──────────────────────────
+            candles = result.get("candlestick_patterns", [])
+            if candles:
+                st.markdown("#### 🕯️ Candlestick Patterns")
+                for c in candles:
+                    c_sig = c.get("signal", "Neutral")
+                    c_col = ("#00d4aa" if c_sig == "Bullish"
+                             else "#ff6b6b" if c_sig == "Bearish" else "#ffb347")
+                    st.markdown(
+                        f"<div style='background:#111520;border-left:3px solid {c_col};"
+                        f"padding:10px 14px;border-radius:0 8px 8px 0;margin:6px 0;"
+                        f"font-size:13px;color:#e4e8f0'>"
+                        f"<strong>{c.get('name','')}</strong> — "
+                        f"<span style='color:{c_col}'>{c_sig}</span> · "
+                        f"{c.get('location','')}</div>",
+                        unsafe_allow_html=True
+                    )
+
+            # ── Support & Resistance ──────────────────────────
+            sr = result.get("support_resistance", {})
+            if sr:
+                st.markdown("#### 🎯 Support & Resistance Levels")
+                sr1, sr2 = st.columns(2)
+                supports   = sr.get("key_support", [])
+                resistances = sr.get("key_resistance", [])
+                with sr1:
+                    st.markdown("**🟢 Key Support Levels**")
+                    for s in supports:
+                        st.markdown(
+                            f"<div style='background:#00d4aa22;border:1px solid #00d4aa44;"
+                            f"border-radius:8px;padding:8px 12px;margin:4px 0;"
+                            f"font-weight:600;color:#00d4aa'>₹ {s}</div>",
+                            unsafe_allow_html=True
+                        )
+                with sr2:
+                    st.markdown("**🔴 Key Resistance Levels**")
+                    for r in resistances:
+                        st.markdown(
+                            f"<div style='background:#ff6b6b22;border:1px solid #ff6b6b44;"
+                            f"border-radius:8px;padding:8px 12px;margin:4px 0;"
+                            f"font-weight:600;color:#ff6b6b'>₹ {r}</div>",
+                            unsafe_allow_html=True
+                        )
+                if sr.get("description"):
+                    st.caption(sr["description"])
+
+            # ── Risk Factors ──────────────────────────────────
+            risks = result.get("risk_factors", [])
+            if risks:
+                st.markdown("#### ⚠️ Risk Factors")
+                for risk in risks:
+                    st.markdown(
+                        f"<div style='background:#ff6b6b11;border-left:3px solid #ff6b6b;"
+                        f"padding:8px 12px;border-radius:0 6px 6px 0;margin:4px 0;"
+                        f"font-size:13px;color:#e4e8f0'>⚠️ {risk}</div>",
+                        unsafe_allow_html=True
+                    )
+
+            # ── Summary ───────────────────────────────────────
+            summary = result.get("summary", "")
+            if summary:
+                st.markdown("---")
+                st.markdown(
+                    f"<div style='background:linear-gradient(135deg,#6c63ff22,#00d4aa11);"
+                    f"border:1px solid #6c63ff44;border-radius:12px;padding:16px 20px;"
+                    f"color:#e4e8f0;font-size:0.95rem;line-height:1.6'>"
+                    f"💡 <strong>Summary:</strong> {summary}</div>",
+                    unsafe_allow_html=True
+                )
+
+            # ── Disclaimer ────────────────────────────────────
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.info(
+                "⚠️ **Disclaimer:** This analysis is generated by AI and is for "
+                "educational purposes only. It is not financial advice. "
+                "Always do your own research before making investment decisions.",
+                icon=None,
+            )
+
+    else:
+        # Empty state
+        st.markdown("""
+        <div style='text-align:center;padding:60px 20px;color:#7a8299'>
+            <div style='font-size:4rem;margin-bottom:16px'>📸</div>
+            <div style='font-size:1.1rem;font-weight:600;color:#e4e8f0;margin-bottom:8px'>
+                Upload a stock chart screenshot to get started
+            </div>
+            <div style='font-size:0.9rem;max-width:400px;margin:0 auto'>
+                Works with screenshots from Zerodha Kite, Groww, TradingView,
+                Google Finance, NSE India, Moneycontrol, or any charting platform
+            </div>
+            <br>
+            <div style='font-size:0.85rem;color:#4a5568'>
+                📈 Patterns &nbsp;·&nbsp; 🎯 Support/Resistance &nbsp;·&nbsp;
+                ⚡ Momentum &nbsp;·&nbsp; 🚀 Recommendation
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
