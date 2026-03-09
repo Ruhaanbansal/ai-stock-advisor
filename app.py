@@ -1672,13 +1672,12 @@ elif page == "📸 Chart Analyzer":
 
     # ── API key check ─────────────────────────────────────────
     if not get_api_key():
-        st.error(
-            "🔑 **Claude API key not found.**\n\n"
-            "Add `ANTHROPIC_API_KEY` to your Streamlit Cloud secrets:\n"
-            "Manage App → Settings → Secrets → add:\n"
-            "```toml\nANTHROPIC_API_KEY = \"sk-ant-your-key-here\"\n```"
+        st.info(
+            "💡 **Running in rule-based mode** — no Claude API key detected. "
+            "Analysis will use image processing instead of AI vision. "
+            "Add `ANTHROPIC_API_KEY` to Streamlit secrets for full AI analysis.",
+            icon=None,
         )
-        st.stop()
 
     # ── Upload section ────────────────────────────────────────
     st.markdown("#### 📤 Upload Chart Screenshot")
@@ -1719,6 +1718,17 @@ elif page == "📸 Chart Analyzer":
             if "error" in result:
                 st.error(f"❌ {result['error']}")
                 st.stop()
+
+            # ── Fallback banner ───────────────────────────────
+            if result.get("_fallback"):
+                reason = result.get("_fallback_reason", "")
+                st.warning(
+                    f"⚡ **Rule-based analysis mode** — {reason}\n\n"
+                    "Add Claude API credits at console.anthropic.com for "
+                    "full AI-powered analysis with precise price levels, "
+                    "exact pattern names, and RSI/MACD readings.",
+                    icon=None,
+                )
 
             st.markdown("---")
             st.markdown("## 📊 Analysis Results")

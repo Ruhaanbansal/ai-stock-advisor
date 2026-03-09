@@ -153,9 +153,12 @@ def analyse_chart(
     """
     api_key = get_api_key()
     if not api_key:
-        return {
-            "error": "ANTHROPIC_API_KEY not found. Please add it to Streamlit secrets."
-        }
+        # No API key — use rule-based fallback silently
+        from src.chart_analyzer_fallback import analyse_chart_fallback
+        result = analyse_chart_fallback(image_bytes, filename)
+        result["_fallback"] = True
+        result["_fallback_reason"] = "No ANTHROPIC_API_KEY found — using rule-based analysis."
+        return result
 
     media_type = _get_media_type(filename)
     img_b64    = _image_to_base64(image_bytes, media_type)
@@ -212,10 +215,19 @@ def analyse_chart(
         return {"error": f"Could not parse AI response: {e}"}
     except Exception as e:
         err = str(e)
-        if "401" in err or "authentication" in err.lower():
-            return {"error": "Invalid API key. Check your ANTHROPIC_API_KEY in secrets."}
-        elif "529" in err or "overload" in err.lower():
+        if "529" in err or "overload" in err.lower():
             return {"error": "Claude API is overloaded. Please try again in a moment."}
+        # Credit exhausted or auth error → use fallback
+        if ("credit" in err.lower() or "balance" in err.lower()
+                or "401" in err or "402" in err):
+            from src.chart_analyzer_fallback import analyse_chart_fallback
+            result = analyse_chart_fallback(image_bytes, filename)
+            result["_fallback"] = True
+            result["_fallback_reason"] = (
+                "Claude API credits exhausted or key invalid. "
+                "Showing rule-based analysis instead."
+            )
+            return result
         return {"error": f"Analysis failed: {err}"}
 
 
