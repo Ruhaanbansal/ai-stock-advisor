@@ -23,6 +23,10 @@ from src.sentiment    import get_news_sentiment, get_stock_news
 from src.risk         import calculate_risk_metrics
 from src.explainability  import get_technical_signals, compute_feature_importance, shap_chart
 from src.ipo_predictor   import load_ipo_model, predict_ipo, get_current_nifty_trend, find_similar_ipos, SECTORS
+from src.fii_dii_analyzer import (load_fii_dii_data, load_fii_dii_model,
+                                   predict_next_day, detect_patterns,
+                                   fetch_live_fii_dii, monthly_summary,
+                                   correlation_analysis)
 from src.portfolio    import recommend_portfolio, optimize_portfolio, generate_efficient_frontier
 from src.backtest     import run_backtest
 from src.evaluation   import evaluate_model
@@ -178,7 +182,7 @@ with st.sidebar:
         "Navigate",
         ["📊 Dashboard", "🧠 AI Prediction", "📰 Market Intelligence",
          "💼 Portfolio Optimizer", "🔁 Backtesting", "🔬 Model Evaluation",
-         "🚀 IPO Predictor"],
+         "🚀 IPO Predictor", "📡 FII/DII Tracker"],
         label_visibility="collapsed",
     )
 
@@ -1247,3 +1251,365 @@ elif page == "🚀 IPO Predictor":
             "This is not financial advice. Always do your own research.",
             icon=None,
         )
+
+
+# ══════════════════════════════════════════════════════════════
+# 📡 FII/DII TRACKER
+# ══════════════════════════════════════════════════════════════
+elif page == "📡 FII/DII Tracker":
+    import plotly.graph_objects as go
+    import plotly.express as px
+
+    st.markdown("""
+    <div style='margin-bottom:24px'>
+        <h2 style='margin:0;font-size:1.6rem;font-weight:700;
+                   background:linear-gradient(135deg,#00d4aa,#6c63ff);
+                   -webkit-background-clip:text;-webkit-text-fill-color:transparent'>
+            📡 FII / DII Activity Tracker
+        </h2>
+        <p style='color:#7a8299;margin:4px 0 0;font-size:0.9rem'>
+            Live foreign & domestic institutional flows · Pattern detection · NIFTY impact prediction
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Load data & model ─────────────────────────────────────
+    with st.spinner("Loading FII/DII data…"):
+        fii_df     = load_fii_dii_data()
+        fii_models = load_fii_dii_model()
+
+    if fii_df is None or fii_df.empty:
+        st.error("⚠️ FII/DII data not found. Make sure `data/raw/fii_dii_historical.csv` is in the repo.")
+        st.stop()
+
+    # ── Tabs ──────────────────────────────────────────────────
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📊 Live Data", "📈 Trends", "🔍 Patterns", "🤖 AI Prediction"
+    ])
+
+    # ══════════════════════════════════════════════════════════
+    # TAB 1 — LIVE DATA
+    # ══════════════════════════════════════════════════════════
+    with tab1:
+        st.markdown("#### Today's FII/DII Activity")
+
+        live = fetch_live_fii_dii()
+
+        if live:
+            st.caption(f"Latest data: **{live['date']}** · Refreshes every 30 min")
+
+            # KPI row
+            k1, k2, k3, k4 = st.columns(4)
+            fii_color = "#00d4aa" if live["fii_net"] >= 0 else "#ff6b6b"
+            dii_color = "#00d4aa" if live["dii_net"] >= 0 else "#ff6b6b"
+
+            k1.markdown(f"""<div style='background:#111520;border:1px solid #1e2538;
+                border-radius:12px;padding:16px;text-align:center'>
+                <div style='font-size:11px;color:#7a8299;margin-bottom:4px'>FII NET</div>
+                <div style='font-size:1.5rem;font-weight:700;color:{fii_color}'>
+                    {"+" if live["fii_net"]>=0 else ""}₹{live["fii_net"]:,.0f} Cr
+                </div></div>""", unsafe_allow_html=True)
+
+            k2.markdown(f"""<div style='background:#111520;border:1px solid #1e2538;
+                border-radius:12px;padding:16px;text-align:center'>
+                <div style='font-size:11px;color:#7a8299;margin-bottom:4px'>DII NET</div>
+                <div style='font-size:1.5rem;font-weight:700;color:{dii_color}'>
+                    {"+" if live["dii_net"]>=0 else ""}₹{live["dii_net"]:,.0f} Cr
+                </div></div>""", unsafe_allow_html=True)
+
+            k3.markdown(f"""<div style='background:#111520;border:1px solid #1e2538;
+                border-radius:12px;padding:16px;text-align:center'>
+                <div style='font-size:11px;color:#7a8299;margin-bottom:4px'>FII BUY</div>
+                <div style='font-size:1.5rem;font-weight:700;color:#e4e8f0'>
+                    ₹{live["fii_buy"]:,.0f} Cr
+                </div></div>""", unsafe_allow_html=True)
+
+            k4.markdown(f"""<div style='background:#111520;border:1px solid #1e2538;
+                border-radius:12px;padding:16px;text-align:center'>
+                <div style='font-size:11px;color:#7a8299;margin-bottom:4px'>DII BUY</div>
+                <div style='font-size:1.5rem;font-weight:700;color:#e4e8f0'>
+                    ₹{live["dii_buy"]:,.0f} Cr
+                </div></div>""", unsafe_allow_html=True)
+
+            # Last 10 days table
+            if live.get("all_days"):
+                st.markdown("<br>**Last 10 Trading Days**", unsafe_allow_html=True)
+                rows = []
+                for d in live["all_days"]:
+                    try:
+                        fn = float(str(d.get("fiiNetValue","0")).replace(",",""))
+                        dn = float(str(d.get("diiNetValue","0")).replace(",",""))
+                        rows.append({
+                            "Date":     d.get("date",""),
+                            "FII Net (₹Cr)": f'{"+" if fn>=0 else ""}₹{fn:,.0f}',
+                            "DII Net (₹Cr)": f'{"+" if dn>=0 else ""}₹{dn:,.0f}',
+                            "Combined":      f'{"+" if fn+dn>=0 else ""}₹{fn+dn:,.0f}',
+                            "Signal": "🟢 Bullish" if fn+dn > 0 else "🔴 Bearish",
+                        })
+                    except Exception:
+                        continue
+                if rows:
+                    st.dataframe(pd.DataFrame(rows), hide_index=True,
+                                 use_container_width=True)
+        else:
+            # Fallback to last row of historical data
+            st.info("💡 Live NSE data unavailable — showing latest historical data")
+            last = fii_df.iloc[-1]
+            k1, k2, k3, k4 = st.columns(4)
+            fii_c = "#00d4aa" if last["fii_net"] >= 0 else "#ff6b6b"
+            dii_c = "#00d4aa" if last["dii_net"] >= 0 else "#ff6b6b"
+            k1.metric("FII Net",
+                      f'{"+" if last["fii_net"]>=0 else ""}₹{last["fii_net"]:,.0f} Cr')
+            k2.metric("DII Net",
+                      f'{"+" if last["dii_net"]>=0 else ""}₹{last["dii_net"]:,.0f} Cr')
+            k3.metric("Combined",
+                      f'{"+" if last["fii_dii_net"]>=0 else ""}₹{last["fii_dii_net"]:,.0f} Cr')
+            k4.metric("Date", str(last["date"])[:10])
+
+        # ── Correlation stats ─────────────────────────────────
+        st.markdown("<br>**FII/DII → NIFTY Correlations**", unsafe_allow_html=True)
+        corr = correlation_analysis(fii_df)
+        c1, c2, c3, c4, c5 = st.columns(5)
+        def corr_color(v):
+            return "#00d4aa" if v > 0.1 else ("#ff6b6b" if v < -0.1 else "#ffb347")
+        for col, label, val in [
+            (c1, "FII → Same Day NIFTY",  corr["fii_same_day"]),
+            (c2, "FII → Next Day NIFTY",  corr["fii_next_day"]),
+            (c3, "DII → Same Day NIFTY",  corr["dii_same_day"]),
+            (c4, "DII → Next Day NIFTY",  corr["dii_next_day"]),
+            (c5, "FII vs DII Corr",        corr["fii_dii_corr"]),
+        ]:
+            col.markdown(f"""<div style='background:#111520;border:1px solid #1e2538;
+                border-radius:10px;padding:12px;text-align:center'>
+                <div style='font-size:10px;color:#7a8299;margin-bottom:4px'>{label}</div>
+                <div style='font-size:1.2rem;font-weight:700;color:{corr_color(val)}'>{val:+.3f}</div>
+                </div>""", unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════════
+    # TAB 2 — TRENDS
+    # ══════════════════════════════════════════════════════════
+    with tab2:
+        st.markdown("#### FII/DII Monthly Flow vs NIFTY Returns")
+
+        monthly = monthly_summary(fii_df)
+
+        # Combined bar + line chart
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=monthly["month"], y=monthly["fii_net"] / 100,
+            name="FII Net (₹100Cr)",
+            marker_color=["#00d4aa" if v >= 0 else "#ff6b6b"
+                          for v in monthly["fii_net"]],
+            opacity=0.8,
+        ))
+        fig.add_trace(go.Bar(
+            x=monthly["month"], y=monthly["dii_net"] / 100,
+            name="DII Net (₹100Cr)",
+            marker_color=["#6c63ff" if v >= 0 else "#ffb347"
+                          for v in monthly["dii_net"]],
+            opacity=0.6,
+        ))
+        fig.add_trace(go.Scatter(
+            x=monthly["month"], y=monthly["nifty_return"],
+            name="NIFTY Monthly Return %",
+            mode="lines+markers",
+            line=dict(color="#ffffff", width=2),
+            yaxis="y2",
+        ))
+        fig.update_layout(
+            template="plotly_dark",
+            barmode="group",
+            height=420,
+            yaxis=dict(title="Flow (₹100 Cr)"),
+            yaxis2=dict(title="NIFTY Return %", overlaying="y",
+                        side="right", showgrid=False),
+            legend=dict(orientation="h", y=1.05),
+            margin=dict(l=40, r=40, t=30, b=40),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # 30-day rolling FII net
+        st.markdown("#### Rolling 30-Day FII Net Flow")
+        recent = fii_df.tail(252).copy()
+        recent["fii_30d_roll"] = recent["fii_net"].rolling(30).sum()
+
+        fig2 = go.Figure()
+        fig2.add_trace(go.Scatter(
+            x=recent["date"], y=recent["fii_30d_roll"],
+            mode="lines", name="30-day rolling FII net",
+            line=dict(width=2, color="#00d4aa"),
+            fill="tozeroy",
+            fillcolor="rgba(0,212,170,0.1)",
+        ))
+        fig2.add_hline(y=0, line=dict(color="#7a8299", dash="dot"))
+        fig2.update_layout(
+            template="plotly_dark", height=300,
+            margin=dict(l=40, r=20, t=20, b=30),
+            yaxis_title="₹ Crores (30-day sum)",
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+
+    # ══════════════════════════════════════════════════════════
+    # TAB 3 — PATTERNS
+    # ══════════════════════════════════════════════════════════
+    with tab3:
+        st.markdown("#### 🔍 Statistically Proven FII/DII Patterns")
+        st.caption(f"Analysed from {len(fii_df)} trading days of data")
+
+        patterns = detect_patterns(fii_df)
+
+        if not patterns:
+            st.info("Not enough data to detect patterns.")
+        else:
+            for p in patterns:
+                sig_color = ("#00d4aa" if p["signal"] == "Bullish"
+                             else "#ff6b6b" if p["signal"] == "Bearish"
+                             else "#ffb347")
+                sig_icon  = ("🟢" if p["signal"] == "Bullish"
+                             else "🔴" if p["signal"] == "Bearish" else "🟡")
+
+                with st.expander(
+                    f"{sig_icon} **{p['name']}** · "
+                    f"Win Rate: {p['win_rate']:.0f}% · "
+                    f"Avg Next-Day: {p['avg_return']:+.2f}%",
+                    expanded=False,
+                ):
+                    pc1, pc2, pc3, pc4 = st.columns(4)
+                    pc1.metric("Signal",       p["signal"])
+                    pc2.metric("Win Rate",     f"{p['win_rate']:.1f}%")
+                    pc3.metric("Avg Return",   f"{p['avg_return']:+.2f}%")
+                    pc4.metric("Sample Size",  f"{p['sample_size']} days")
+
+                    st.markdown(
+                        f"<div style='color:#7a8299;font-size:13px;margin-top:4px'>"
+                        f"📋 {p['description']} · "
+                        f"Std dev: {p['std']:.2f}%</div>",
+                        unsafe_allow_html=True
+                    )
+
+                    # Mini bar showing win rate
+                    wr = p["win_rate"]
+                    st.markdown(f"""
+                    <div style='margin-top:10px'>
+                        <div style='font-size:11px;color:#7a8299;margin-bottom:4px'>
+                            Win rate: {wr:.0f}% bullish outcomes
+                        </div>
+                        <div style='background:#1e2538;border-radius:4px;height:8px'>
+                            <div style='background:{sig_color};width:{wr}%;
+                                        height:8px;border-radius:4px'></div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════════════════════
+    # TAB 4 — AI PREDICTION
+    # ══════════════════════════════════════════════════════════
+    with tab4:
+        st.markdown("#### 🤖 AI Prediction: Tomorrow's NIFTY Direction")
+
+        if fii_models is None:
+            st.error("Model could not be trained — insufficient data.")
+        else:
+            st.caption(
+                f"Model trained on **{fii_models['n_train']} trading days** · "
+                f"Cross-val accuracy: **{fii_models['cv_accuracy']:.1f}%**"
+            )
+
+            prediction = predict_next_day(fii_models, fii_df)
+
+            if prediction:
+                direction = prediction["direction"]
+                conf      = prediction["confidence"]
+                mag       = prediction["magnitude"]
+                prob_up   = prediction["prob_up"]
+                prob_down = prediction["prob_down"]
+
+                pred_color = "#00d4aa" if direction == "Bullish" else "#ff6b6b"
+                pred_icon  = "📈" if direction == "Bullish" else "📉"
+
+                # Big prediction card
+                st.markdown(f"""
+                <div style='background:linear-gradient(135deg,{pred_color}22,{pred_color}11);
+                            border:1px solid {pred_color}55;border-radius:16px;
+                            padding:28px;text-align:center;margin:16px 0'>
+                    <div style='font-size:3rem'>{pred_icon}</div>
+                    <div style='font-size:2rem;font-weight:800;color:{pred_color};margin:8px 0'>
+                        {direction}
+                    </div>
+                    <div style='color:#7a8299;font-size:0.9rem'>
+                        Expected move: <strong style='color:#e4e8f0'>{mag:+.2f}%</strong> ·
+                        Confidence: <strong style='color:#e4e8f0'>{conf:.1f}%</strong>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Probability bars
+                pa, pb = st.columns(2)
+                with pa:
+                    st.markdown(f"""
+                    <div style='background:#111520;border:1px solid #1e2538;
+                                border-radius:12px;padding:16px;text-align:center'>
+                        <div style='font-size:12px;color:#7a8299;margin-bottom:8px'>
+                            📈 Bullish Probability
+                        </div>
+                        <div style='font-size:1.6rem;font-weight:700;color:#00d4aa'>
+                            {prob_up:.1f}%
+                        </div>
+                        <div style='background:#1e2538;border-radius:4px;
+                                    height:8px;margin-top:8px'>
+                            <div style='background:#00d4aa;width:{prob_up}%;
+                                        height:8px;border-radius:4px'></div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                with pb:
+                    st.markdown(f"""
+                    <div style='background:#111520;border:1px solid #1e2538;
+                                border-radius:12px;padding:16px;text-align:center'>
+                        <div style='font-size:12px;color:#7a8299;margin-bottom:8px'>
+                            📉 Bearish Probability
+                        </div>
+                        <div style='font-size:1.6rem;font-weight:700;color:#ff6b6b'>
+                            {prob_down:.1f}%
+                        </div>
+                        <div style='background:#1e2538;border-radius:4px;
+                                    height:8px;margin-top:8px'>
+                            <div style='background:#ff6b6b;width:{prob_down}%;
+                                        height:8px;border-radius:4px'></div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                # Current FII/DII context
+                st.markdown("<br>**Current FII/DII Context (last 5 days)**",
+                            unsafe_allow_html=True)
+                recent5 = fii_df.tail(5)[
+                    ["date", "fii_net", "dii_net",
+                     "fii_dii_net", "nifty_return"]
+                ].copy()
+                recent5.columns = [
+                    "Date", "FII Net (₹Cr)", "DII Net (₹Cr)",
+                    "Combined (₹Cr)", "NIFTY Return %"
+                ]
+                recent5 = recent5.sort_values("Date", ascending=False)
+                st.dataframe(
+                    recent5.style.format({
+                        "FII Net (₹Cr)":    "{:,.0f}",
+                        "DII Net (₹Cr)":    "{:,.0f}",
+                        "Combined (₹Cr)":   "{:,.0f}",
+                        "NIFTY Return %":   "{:.2f}%",
+                    }),
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
+            # Disclaimer
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.info(
+                "⚠️ **Disclaimer:** FII/DII flow predictions are based on "
+                "historical patterns and do not guarantee future market movement. "
+                "Markets are influenced by many factors beyond institutional flows. "
+                "This is not financial advice.",
+                icon=None,
+            )
