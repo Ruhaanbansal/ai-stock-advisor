@@ -1,5 +1,5 @@
 # =============================================================
-# evaluation.py — Model Evaluation & Diagnostics
+# evaluation.py — Model Evaluation (GradientBoosting compatible)
 # =============================================================
 
 import numpy as np
@@ -7,13 +7,8 @@ import pandas as pd
 import plotly.graph_objects as go
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
-from src.features import create_features, create_lstm_sequences
 from src.config import SEQUENCE_LENGTH
 
-
-# ─────────────────────────────────────────────────────────────
-# Evaluate Model
-# ─────────────────────────────────────────────────────────────
 
 def evaluate_model(
     close_prices:    pd.Series,
@@ -22,37 +17,43 @@ def evaluate_model(
     sequence_length: int = SEQUENCE_LENGTH,
 ) -> dict:
     """
-    Run the trained model over historical data and compute error metrics.
-    Returns a dict with mae, rmse, mape, confidence, and a Plotly figure.
+    Evaluate the GradientBoosting model on historical data.
+    Rebuilds features using the same pipeline as model.py so
+    predictions are directly comparable to actual prices.
     """
-    feature_df = create_features(close_prices)
-    X, _       = create_lstm_sequences(scaler.transform(feature_df.values), sequence_length)
+    from src.model import _build_features
 
-    if X.shape[0] == 0:
+    X, y, _, scaled = _build_features(close_prices, seq_len=sequence_length)
+
+    if len(X) == 0:
         raise ValueError("Insufficient data for evaluation.")
 
-    # Predictions
-    pred_scaled = model.predict(X, verbose=0)
-    n_features  = X.shape[2]
+    # ── Predictions in scaled space ───────────────────────────
+    pred_scaled = model.predict(X)
 
-    padded = np.concatenate(
-        [pred_scaled, np.zeros((len(pred_scaled), n_features - 1))],
-        axis=1
-    )
-    predictions  = scaler.inverse_transform(padded)[:, 0]
-    actual       = feature_df["Close"].iloc[sequence_length:].values
+    # ── Inverse transform to price space ─────────────────────
+    predictions = scaler.inverse_transform(
+        pred_scaled.reshape(-1, 1)
+    ).flatten()
+
+    actual = scaler.inverse_transform(
+        y.reshape(-1, 1)
+    ).flatten()
 
     # ── Metrics ───────────────────────────────────────────────
-    mae   = float(mean_absolute_error(actual, predictions))
-    rmse  = float(np.sqrt(mean_squared_error(actual, predictions)))
-    mape  = float(np.mean(np.abs((actual - predictions) / actual)) * 100)
+    mae  = float(mean_absolute_error(actual, predictions))
+    rmse = float(np.sqrt(mean_squared_error(actual, predictions)))
+    mape = float(np.mean(np.abs((actual - predictions) /
+                                np.where(actual == 0, 1, actual))) * 100)
 
-    latest_price = actual[-1]
+    latest_price = float(close_prices.iloc[-1])
     confidence   = max(0.0, min(100.0, 100.0 - (rmse / latest_price) * 100))
 
-    # ── Plotly Chart ──────────────────────────────────────────
-    dates = feature_df.index[sequence_length:]
+    # ── Date index for chart ───────────────────────────────────
+    # X starts at index `sequence_length` of close_prices
+    dates = close_prices.index[sequence_length : sequence_length + len(actual)]
 
+    # ── Plotly Chart ──────────────────────────────────────────
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=dates, y=actual,
@@ -74,12 +75,29 @@ def evaluate_model(
         margin=dict(l=40, r=20, t=60, b=40),
     )
 
+    # ── Residuals ─────────────────────────────────────────────
+    residuals = actual - predictions
+    res_fig = go.Figure()
+    res_fig.add_trace(go.Scatter(
+        x=dates, y=residuals,
+        mode="lines", name="Residual",
+        line=dict(color="#6c63ff", width=1),
+    ))
+    res_fig.add_hline(y=0, line=dict(color="#7a8299", dash="dot"))
+    res_fig.update_layout(
+        template="plotly_dark",
+        title="Prediction Residuals",
+        height=220,
+        margin=dict(l=40, r=20, t=40, b=30),
+    )
+
     return {
-        "mae":        round(mae,   2),
-        "rmse":       round(rmse,  2),
-        "mape":       round(mape,  2),
-        "confidence": round(confidence, 2),
-        "chart":      fig,
-        "actual":     actual,
+        "mae":         round(mae, 2),
+        "rmse":        round(rmse, 2),
+        "mape":        round(mape, 2),
+        "confidence":  round(confidence, 2),
+        "chart":       fig,
+        "residual_chart": res_fig,
+        "actual":      actual,
         "predictions": predictions,
     }
