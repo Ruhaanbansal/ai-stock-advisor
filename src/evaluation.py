@@ -1,11 +1,18 @@
 # =============================================================
-# evaluation.py — Model Evaluation (GradientBoosting compatible)
+# evaluation.py — Model Evaluation (GradientBoosting)
+# =============================================================
+#
+# Key design: we do NOT use the scaler from train_lstm_model
+# because it was fit inside _build_features on a fresh call.
+# Instead we refit a fresh scaler here on the same data,
+# which is guaranteed to match what the model was trained on.
 # =============================================================
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.metrics        import mean_absolute_error, mean_squared_error
+from sklearn.preprocessing  import MinMaxScaler
 
 from src.config import SEQUENCE_LENGTH
 
@@ -13,47 +20,67 @@ from src.config import SEQUENCE_LENGTH
 def evaluate_model(
     close_prices:    pd.Series,
     model,
-    scaler,
+    scaler,                     # kept for API compatibility, not used directly
     sequence_length: int = SEQUENCE_LENGTH,
 ) -> dict:
     """
-    Evaluate the GradientBoosting model on historical data.
-    Rebuilds features using the same pipeline as model.py so
-    predictions are directly comparable to actual prices.
+    Evaluate the GradientBoosting model on historical close prices.
+    Rebuilds features from scratch using the same pipeline as model.py.
     """
-    from src.model import _build_features
+    prices = close_prices.dropna()
 
-    X, y, _, scaled = _build_features(close_prices, seq_len=sequence_length)
+    if len(prices) < sequence_length + 10:
+        raise ValueError(
+            f"Need at least {sequence_length + 10} data points, "
+            f"got {len(prices)}."
+        )
 
-    if len(X) == 0:
-        raise ValueError("Insufficient data for evaluation.")
-
-    # ── Predictions in scaled space ───────────────────────────
-    pred_scaled = model.predict(X)
-
-    # ── Inverse transform to price space ─────────────────────
-    predictions = scaler.inverse_transform(
-        pred_scaled.reshape(-1, 1)
+    # ── Refit scaler on close prices (matches model training) ─
+    eval_scaler = MinMaxScaler()
+    scaled      = eval_scaler.fit_transform(
+        prices.values.reshape(-1, 1)
     ).flatten()
 
-    actual = scaler.inverse_transform(
-        y.reshape(-1, 1)
+    # ── Rebuild feature matrix (same logic as model._build_features) ─
+    X, y = [], []
+    for i in range(sequence_length, len(scaled) - 1):
+        window = scaled[i - sequence_length : i]
+        r5     = np.mean(window[-5:])
+        r10    = np.mean(window[-10:]) if len(window) >= 10 else r5
+        r20    = np.mean(window[-20:]) if len(window) >= 20 else r10
+        s5     = np.std(window[-5:])
+        ret    = window[-1] - window[-2]
+        X.append(np.concatenate([window, [r5, r10, r20, s5, ret]]))
+        y.append(scaled[i])
+
+    if len(X) == 0:
+        raise ValueError("Not enough data to build evaluation features.")
+
+    X = np.array(X)
+    y = np.array(y)
+
+    # ── Run predictions ───────────────────────────────────────
+    pred_scaled = model.predict(X)
+
+    # ── Inverse transform to ₹ price space ───────────────────
+    actual      = eval_scaler.inverse_transform(y.reshape(-1, 1)).flatten()
+    predictions = eval_scaler.inverse_transform(
+        pred_scaled.reshape(-1, 1)
     ).flatten()
 
     # ── Metrics ───────────────────────────────────────────────
     mae  = float(mean_absolute_error(actual, predictions))
     rmse = float(np.sqrt(mean_squared_error(actual, predictions)))
-    mape = float(np.mean(np.abs((actual - predictions) /
-                                np.where(actual == 0, 1, actual))) * 100)
+    eps  = np.where(np.abs(actual) < 1e-8, 1e-8, actual)
+    mape = float(np.mean(np.abs((actual - predictions) / eps)) * 100)
 
-    latest_price = float(close_prices.iloc[-1])
+    latest_price = float(prices.iloc[-1])
     confidence   = max(0.0, min(100.0, 100.0 - (rmse / latest_price) * 100))
 
-    # ── Date index for chart ───────────────────────────────────
-    # X starts at index `sequence_length` of close_prices
-    dates = close_prices.index[sequence_length : sequence_length + len(actual)]
+    # ── Date axis ─────────────────────────────────────────────
+    dates = prices.index[sequence_length : sequence_length + len(actual)]
 
-    # ── Plotly Chart ──────────────────────────────────────────
+    # ── Actual vs Predicted chart ─────────────────────────────
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=dates, y=actual,
@@ -75,29 +102,31 @@ def evaluate_model(
         margin=dict(l=40, r=20, t=60, b=40),
     )
 
-    # ── Residuals ─────────────────────────────────────────────
+    # ── Residuals chart ───────────────────────────────────────
     residuals = actual - predictions
     res_fig = go.Figure()
     res_fig.add_trace(go.Scatter(
         x=dates, y=residuals,
         mode="lines", name="Residual",
         line=dict(color="#6c63ff", width=1),
+        fill="tozeroy",
+        fillcolor="rgba(108,99,255,0.08)",
     ))
     res_fig.add_hline(y=0, line=dict(color="#7a8299", dash="dot"))
     res_fig.update_layout(
         template="plotly_dark",
-        title="Prediction Residuals",
+        title="Prediction Residuals (Actual − Predicted)",
         height=220,
         margin=dict(l=40, r=20, t=40, b=30),
     )
 
     return {
-        "mae":         round(mae, 2),
-        "rmse":        round(rmse, 2),
-        "mape":        round(mape, 2),
-        "confidence":  round(confidence, 2),
-        "chart":       fig,
+        "mae":            round(mae, 2),
+        "rmse":           round(rmse, 2),
+        "mape":           round(mape, 2),
+        "confidence":     round(confidence, 2),
+        "chart":          fig,
         "residual_chart": res_fig,
-        "actual":      actual,
-        "predictions": predictions,
+        "actual":         actual,
+        "predictions":    predictions,
     }
