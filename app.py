@@ -21,7 +21,8 @@ from src.model        import train_lstm_model, predict_next_price, forecast_pric
 from src.features     import create_extended_features
 from src.sentiment    import get_news_sentiment, get_stock_news
 from src.risk         import calculate_risk_metrics
-from src.explainability import get_technical_signals, compute_feature_importance, shap_chart
+from src.explainability  import get_technical_signals, compute_feature_importance, shap_chart
+from src.ipo_predictor   import load_ipo_model, predict_ipo, get_current_nifty_trend, find_similar_ipos, SECTORS
 from src.portfolio    import recommend_portfolio, optimize_portfolio, generate_efficient_frontier
 from src.backtest     import run_backtest
 from src.evaluation   import evaluate_model
@@ -176,7 +177,8 @@ with st.sidebar:
     page = st.radio(
         "Navigate",
         ["📊 Dashboard", "🧠 AI Prediction", "📰 Market Intelligence",
-         "💼 Portfolio Optimizer", "🔁 Backtesting", "🔬 Model Evaluation"],
+         "💼 Portfolio Optimizer", "🔁 Backtesting", "🔬 Model Evaluation",
+         "🚀 IPO Predictor"],
         label_visibility="collapsed",
     )
 
@@ -1003,3 +1005,245 @@ elif page == "🔬 Model Evaluation":
     )
     hist_fig.update_layout(template="plotly_dark", margin=dict(l=0,r=0,t=10,b=0))
     st.plotly_chart(hist_fig, width='stretch')
+
+
+# ══════════════════════════════════════════════════════════════
+# 🚀 IPO PREDICTOR
+# ══════════════════════════════════════════════════════════════
+elif page == "🚀 IPO Predictor":
+
+    st.markdown("""
+    <div style='margin-bottom:24px'>
+        <h2 style='margin:0;font-size:1.6rem;font-weight:700;
+                   background:linear-gradient(135deg,#00d4aa,#6c63ff);
+                   -webkit-background-clip:text;-webkit-text-fill-color:transparent'>
+            🚀 IPO Success Predictor
+        </h2>
+        <p style='color:#7a8299;margin:4px 0 0;font-size:0.9rem'>
+            Enter IPO details to predict listing gain, 30-day return &amp; subscription recommendation
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Load model ────────────────────────────────────────────
+    with st.spinner("Loading IPO prediction model…"):
+        ipo_models = load_ipo_model()
+
+    if ipo_models is None:
+        st.error(
+            "⚠️ IPO training data not found. "
+            "Make sure `data/raw/ipo_historical.csv` is in the repository."
+        )
+        st.stop()
+
+    st.caption(
+        f"Model trained on **{ipo_models['n_train']} IPOs** (2015–2025) · "
+        f"Cross-val MAE: **{ipo_models['mae_cv']:.1f}%**"
+    )
+
+    st.markdown("---")
+
+    # ── Input Form ────────────────────────────────────────────
+    st.markdown("#### 📋 IPO Details")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        ipo_name    = st.text_input("IPO Name", placeholder="e.g. Swiggy, Hyundai India")
+        issue_price = st.number_input("Issue Price (₹)", min_value=1, max_value=50000,
+                                       value=500, step=10)
+        sector      = st.selectbox("Sector", sorted(SECTORS))
+
+    with col2:
+        sub_total  = st.number_input("Total Subscription (×)",
+                                      min_value=0.0, max_value=500.0,
+                                      value=10.0, step=0.5,
+                                      help="e.g. 10.5 means 10.5× oversubscribed")
+        sub_qib    = st.number_input("QIB Subscription (×)",
+                                      min_value=0.0, max_value=500.0,
+                                      value=15.0, step=0.5,
+                                      help="Qualified Institutional Buyers")
+        sub_hni    = st.number_input("HNI Subscription (×)",
+                                      min_value=0.0, max_value=500.0,
+                                      value=8.0, step=0.5,
+                                      help="High Net Worth Individuals")
+
+    with col3:
+        sub_retail = st.number_input("Retail Subscription (×)",
+                                      min_value=0.0, max_value=200.0,
+                                      value=5.0, step=0.5)
+        gmp        = st.number_input("GMP % (Grey Market Premium)",
+                                      min_value=-50.0, max_value=200.0,
+                                      value=15.0, step=1.0,
+                                      help="Grey market premium as % of issue price. "
+                                           "Negative = grey market discount.")
+        nifty_trend = st.number_input("NIFTY 30-day Trend %",
+                                       min_value=-30.0, max_value=30.0,
+                                       value=get_current_nifty_trend(),
+                                       step=0.5,
+                                       help="Auto-filled with current NIFTY trend. "
+                                            "You can override manually.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    predict_btn = st.button("🔮 Predict IPO Performance", type="primary")
+
+    # ── Prediction Output ─────────────────────────────────────
+    if predict_btn:
+        with st.spinner("Analysing IPO…"):
+            result = predict_ipo(
+                ipo_models,
+                sub_total=sub_total,
+                sub_qib=sub_qib,
+                sub_hni=sub_hni,
+                sub_retail=sub_retail,
+                gmp_percent=gmp,
+                nifty_trend=nifty_trend,
+                issue_price=issue_price,
+                sector=sector,
+            )
+
+        st.markdown("---")
+
+        # ── Recommendation badge ──────────────────────────────
+        rec   = result["recommendation"]
+        conf  = result["confidence"]
+        color_map = {
+            "Strong Subscribe": "#00d4aa",
+            "Subscribe":        "#6c63ff",
+            "Neutral":          "#ffb347",
+            "Avoid":            "#ff6b6b",
+        }
+        icon_map = {
+            "Strong Subscribe": "🟢",
+            "Subscribe":        "🔵",
+            "Neutral":          "🟡",
+            "Avoid":            "🔴",
+        }
+        rec_color = color_map.get(rec, "#7a8299")
+        rec_icon  = icon_map.get(rec, "⚪")
+
+        st.markdown(f"""
+        <div style='background:linear-gradient(135deg,{rec_color}22,{rec_color}11);
+                    border:1px solid {rec_color}55;border-radius:16px;
+                    padding:24px 32px;text-align:center;margin-bottom:24px'>
+            <div style='font-size:3rem;margin-bottom:8px'>{rec_icon}</div>
+            <div style='font-size:1.8rem;font-weight:800;color:{rec_color}'>
+                {rec}
+            </div>
+            <div style='color:#7a8299;font-size:0.9rem;margin-top:4px'>
+                Model confidence: <strong style='color:#e4e8f0'>{conf:.1f}%</strong>
+            </div>
+            {"<div style='color:#e4e8f0;font-size:1rem;margin-top:8px'>for <strong>" + ipo_name + "</strong></div>" if ipo_name else ""}
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── KPI metrics ───────────────────────────────────────
+        k1, k2, k3, k4 = st.columns(4)
+        listing_gain = result["listing_gain"]
+        return_30d   = result["return_30d"]
+        total_return = listing_gain + return_30d
+
+        k1.metric("📈 Listing Day Gain",
+                  f"{listing_gain:+.1f}%",
+                  delta=f"vs issue ₹{issue_price}")
+        k2.metric("📅 30-Day Return",
+                  f"{return_30d:+.1f}%",
+                  delta="post listing")
+        k3.metric("💰 Expected Price",
+                  f"₹{issue_price * (1 + listing_gain/100):.0f}",
+                  delta=f"on listing day")
+        k4.metric("🎯 Total 30-Day",
+                  f"{total_return:+.1f}%",
+                  delta="from issue price")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # ── Probability breakdown ─────────────────────────────
+        col_a, col_b = st.columns([1, 1])
+
+        with col_a:
+            st.markdown("**Outcome Probabilities**")
+            proba_order = ["Strong Subscribe", "Subscribe", "Neutral", "Avoid"]
+            for label in proba_order:
+                prob  = result["probabilities"].get(label, 0)
+                color = color_map.get(label, "#7a8299")
+                st.markdown(f"""
+                <div style='margin-bottom:8px'>
+                    <div style='display:flex;justify-content:space-between;
+                                margin-bottom:3px;font-size:13px'>
+                        <span style='color:#e4e8f0'>{label}</span>
+                        <span style='color:{color};font-weight:600'>{prob:.1f}%</span>
+                    </div>
+                    <div style='background:#1e2538;border-radius:4px;height:6px'>
+                        <div style='background:{color};width:{prob}%;
+                                    height:6px;border-radius:4px'></div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        with col_b:
+            st.markdown("**Key Prediction Drivers**")
+            feat_labels = {
+                "sub_total":       "Total Subscription",
+                "sub_qib":         "QIB Subscription",
+                "sub_hni":         "HNI Subscription",
+                "sub_retail":      "Retail Subscription",
+                "gmp_percent":     "Grey Market Premium",
+                "nifty_trend_30d": "Market Trend (NIFTY)",
+                "issue_price_log": "Issue Price",
+            }
+            for feat, imp in result["feature_importance"]:
+                label = feat_labels.get(feat, feat.replace("sector_","").replace("_"," "))
+                bar   = int(imp * 400)
+                st.markdown(f"""
+                <div style='margin-bottom:8px'>
+                    <div style='display:flex;justify-content:space-between;
+                                margin-bottom:3px;font-size:13px'>
+                        <span style='color:#e4e8f0'>{label}</span>
+                        <span style='color:#00d4aa;font-weight:600'>{imp:.1%}</span>
+                    </div>
+                    <div style='background:#1e2538;border-radius:4px;height:6px'>
+                        <div style='background:#00d4aa;width:{bar}%;
+                                    height:6px;border-radius:4px'></div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # ── Similar past IPOs ─────────────────────────────────
+        st.markdown("**📚 Similar Past IPOs for Reference**")
+        similar = find_similar_ipos(sub_total, gmp, sector, n=4)
+
+        if not similar.empty:
+            sim_cols = st.columns(len(similar))
+            for i, (_, row) in enumerate(similar.iterrows()):
+                rec_c = color_map.get(row["recommendation"], "#7a8299")
+                sim_cols[i].markdown(f"""
+                <div style='background:#111520;border:1px solid #1e2538;
+                            border-radius:12px;padding:14px;text-align:center'>
+                    <div style='font-weight:600;color:#e4e8f0;
+                                font-size:13px;margin-bottom:6px'>
+                        {row["name"]}
+                    </div>
+                    <div style='font-size:11px;color:#7a8299;margin-bottom:8px'>
+                        ₹{row["issue_price"]} · {row["sub_total"]:.0f}×
+                    </div>
+                    <div style='font-size:1.1rem;font-weight:700;color:{rec_c}'>
+                        {row["listing_gain"]:+.1f}%
+                    </div>
+                    <div style='font-size:10px;color:#7a8299;margin-top:2px'>
+                        listing gain
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        # ── Disclaimer ────────────────────────────────────────
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.info(
+            "⚠️ **Disclaimer:** These predictions are based on historical patterns "
+            "and machine learning models. IPO performance depends on many factors "
+            "including market conditions, company fundamentals, and investor sentiment. "
+            "This is not financial advice. Always do your own research.",
+            icon=None,
+        )
