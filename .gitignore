@@ -8,7 +8,11 @@ __pycache__/
 .ipynb_checkpoints/
 
 # Raw data files
-data/raw/
+# Keep raw CSVs (needed by Streamlit Cloud)
+data/raw/*.pkl
+data/raw/*.h5
+# Ignore processed cache only
+data/processed/
 
 # System files
 .DS_Store
