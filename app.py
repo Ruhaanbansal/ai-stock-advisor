@@ -286,7 +286,9 @@ with st.sidebar:
 # WELCOME PAGE — shown until user picks a stock
 # ══════════════════════════════════════════════════════════════
 
-if st.session_state.get("selected_stock") is None:
+_STOCK_FREE_PAGES = {"🚀 IPO Predictor", "📡 FII/DII Tracker", "📸 Chart Analyzer", "💼 Portfolio Optimizer"}
+
+if st.session_state.get("selected_stock") is None and page not in _STOCK_FREE_PAGES:
     st.markdown("""
     <div style='text-align:center;padding:60px 20px 30px'>
         <div style='font-size:56px;margin-bottom:16px'>🧠</div>
@@ -345,90 +347,95 @@ if st.session_state.get("selected_stock") is None:
 
 
 # ══════════════════════════════════════════════════════════════
-# DATA LOADING  (cached — runs once per stock/period combo)
+# DATA LOADING  (skipped for stock-free pages)
 # ══════════════════════════════════════════════════════════════
 
-with st.spinner("Fetching market data…"):
-    import logging
-    logging.basicConfig(level=logging.INFO)
-    data = load_stock_data(stock, period=period)
+data         = None
+close_prices = None
 
-if data is None or data.empty:
-    st.error(
-        f"⚠️ Could not load data for **{st.session_state.get('selected_stock_name', stock)}** "
-        f"(`{stock}`) from any data source (Yahoo Finance, Stooq, Alpha Vantage). "
-        "This is likely a temporary outage — please try again in a moment."
-    )
-    col_r1, col_r2 = st.columns(2)
-    if col_r1.button("🔄 Retry", key="retry_main"):
-        st.cache_data.clear()
-        st.rerun()
-    if col_r2.button("🔍 Search different stock", key="retry_search"):
-        st.session_state.selected_stock      = "RELIANCE.NS"
-        st.session_state.selected_stock_name = "Reliance Industries"
-        st.rerun()
-    st.stop()
+if page not in _STOCK_FREE_PAGES:
+    with st.spinner("Fetching market data…"):
+        import logging
+        logging.basicConfig(level=logging.INFO)
+        data = load_stock_data(stock, period=period)
 
-close_prices = get_close_prices(data)
+    if data is None or data.empty:
+        st.error(
+            f"⚠️ Could not load data for **{st.session_state.get('selected_stock_name', stock)}** "
+            f"(`{stock}`) from any data source (Yahoo Finance, Stooq, Alpha Vantage). "
+            "This is likely a temporary outage — please try again in a moment."
+        )
+        col_r1, col_r2 = st.columns(2)
+        if col_r1.button("🔄 Retry", key="retry_main"):
+            st.cache_data.clear()
+            st.rerun()
+        if col_r2.button("🔍 Search different stock", key="retry_search"):
+            st.session_state.selected_stock      = "RELIANCE.NS"
+            st.session_state.selected_stock_name = "Reliance Industries"
+            st.rerun()
+        st.stop()
 
-# Guard: need at least 65 data points for LSTM sequences
-if len(close_prices) < 65:
-    st.warning(
-        f"Not enough historical data for **{stock}** (only {len(close_prices)} days found). "
-        "Try selecting a longer period or a different stock."
-    )
-    st.stop()
+    close_prices = get_close_prices(data)
 
-
-# ══════════════════════════════════════════════════════════════
-# MODEL TRAINING  (cached per stock — no retraining on re-render)
-# ══════════════════════════════════════════════════════════════
-
-with st.spinner("Loading AI model…"):
-    cp_hash = hash(close_prices.values.tobytes())
-    model, scaler, last_sequence = train_lstm_model(stock, cp_hash, close_prices)
-
-predicted_price = predict_next_price(model, scaler, last_sequence)
-current_price   = float(close_prices.iloc[-1])
-forecast_5d     = forecast_prices(model, scaler, last_sequence, days=5)
+    if len(close_prices) < 65:
+        st.warning(
+            f"Not enough historical data for **{stock}** (only {len(close_prices)} days found). "
+            "Try selecting a longer period or a different stock."
+        )
+        st.stop()
 
 
 # ══════════════════════════════════════════════════════════════
-# SENTIMENT, RISK, ADVISOR  (all cached via sub-functions)
+# MODEL TRAINING  (skipped for stock-free pages)
 # ══════════════════════════════════════════════════════════════
 
-with st.spinner("Analysing sentiment & risk…"):
-    sentiment_score, sentiment_label, headlines, sentiment_source = get_news_sentiment(stock)
-    risk_metrics = calculate_risk_metrics(close_prices)
+model = scaler = last_sequence = None
+predicted_price = current_price = None
+forecast_5d = []
+sentiment_score = sentiment_label = headlines = sentiment_source = None
+risk_metrics = volatility = sharpe_ratio = max_drawdown = advisor = None
 
-volatility   = risk_metrics["volatility"]
-sharpe_ratio = risk_metrics["sharpe_ratio"]
-max_drawdown = risk_metrics["max_drawdown"]
+if page not in _STOCK_FREE_PAGES:
+    with st.spinner("Loading AI model…"):
+        cp_hash = hash(close_prices.values.tobytes())
+        model, scaler, last_sequence = train_lstm_model(stock, cp_hash, close_prices)
 
-advisor = run_ai_advisor(current_price, predicted_price, volatility, sentiment_score)
+    predicted_price = predict_next_price(model, scaler, last_sequence)
+    current_price   = float(close_prices.iloc[-1])
+    forecast_5d     = forecast_prices(model, scaler, last_sequence, days=5)
+
+    with st.spinner("Analysing sentiment & risk…"):
+        sentiment_score, sentiment_label, headlines, sentiment_source = get_news_sentiment(stock)
+        risk_metrics = calculate_risk_metrics(close_prices)
+
+    volatility   = risk_metrics["volatility"]
+    sharpe_ratio = risk_metrics["sharpe_ratio"]
+    max_drawdown = risk_metrics["max_drawdown"]
+    advisor = run_ai_advisor(current_price, predicted_price, volatility, sentiment_score)
 
 
 # ══════════════════════════════════════════════════════════════
-# GLOBAL KPI STRIP  (always visible)
+# GLOBAL KPI STRIP  (only for stock pages)
 # ══════════════════════════════════════════════════════════════
 
-st.markdown(f"## {STOCK_LABELS.get(stock, stock)}")
-st.caption(f"`{stock}` · {period} view · Prices in ₹")
+if page not in _STOCK_FREE_PAGES:
+    st.markdown(f"## {STOCK_LABELS.get(stock, stock)}")
+    st.caption(f"`{stock}` · {period} view · Prices in ₹")
 
-k1, k2, k3, k4, k5 = st.columns(5)
-price_delta = f"{advisor['price_change']:+.2f}%"
-k1.metric("Current Price",   f"₹{current_price:,.2f}")
-k2.metric("AI Predicted",    f"₹{predicted_price:,.2f}", price_delta)
-k3.metric("Sentiment",       sentiment_label)
-k4.metric("Risk",            advisor["risk"])
-k5.metric("Recommendation",  advisor["recommendation"])
+    k1, k2, k3, k4, k5 = st.columns(5)
+    price_delta = f"{advisor['price_change']:+.2f}%"
+    k1.metric("Current Price",   f"₹{current_price:,.2f}")
+    k2.metric("AI Predicted",    f"₹{predicted_price:,.2f}", price_delta)
+    k3.metric("Sentiment",       sentiment_label)
+    k4.metric("Risk",            advisor["risk"])
+    k5.metric("Recommendation",  advisor["recommendation"])
 
-st.markdown("---")
+    st.markdown("---")
 
-# ── Data source badge ────────────────────────────────────
-_source = st.session_state.get("data_source", "Yahoo Finance")
-_source_color = {"Yahoo Finance": "#00d4aa", "Stooq": "#6c63ff", "Alpha Vantage": "#ffb347"}.get(_source, "#7a8299")
-st.caption(f'Data sourced from: :{_source_color}[**{_source}**]')
+    # ── Data source badge ────────────────────────────────────
+    _source = st.session_state.get("data_source", "Yahoo Finance")
+    _source_color = {"Yahoo Finance": "#00d4aa", "Stooq": "#6c63ff", "Alpha Vantage": "#ffb347"}.get(_source, "#7a8299")
+    st.caption(f'Data sourced from: :{_source_color}[**{_source}**]')
 
 
 # ══════════════════════════════════════════════════════════════
