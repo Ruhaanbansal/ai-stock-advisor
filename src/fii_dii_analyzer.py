@@ -361,17 +361,42 @@ def fetch_live_fii_dii() -> dict | None:
         if not data:
             return None
 
-        # Most recent entry
-        latest = data[0]
+        def _safe_float(val) -> float:
+            try:
+                return float(str(val).replace(",","").replace("−","-").strip() or "0")
+            except Exception:
+                return 0.0
+
+        # Find most recent entry with non-zero data
+        latest = None
+        for entry in data:
+            fii_n = _safe_float(entry.get("fiiNetValue") or
+                                 entry.get("fii_net") or 0)
+            dii_n = _safe_float(entry.get("diiNetValue") or
+                                 entry.get("dii_net") or 0)
+            if abs(fii_n) > 0 or abs(dii_n) > 0:
+                latest = entry
+                break
+
+        if latest is None:
+            return None   # all zeros — trigger fallback
+
+        # Handle both camelCase and snake_case keys
+        def _get(d, *keys):
+            for k in keys:
+                if k in d:
+                    return _safe_float(d[k])
+            return 0.0
+
         return {
-            "date":      latest.get("date", ""),
-            "fii_buy":   float(str(latest.get("fiiBuyValue",  "0")).replace(",","")),
-            "fii_sell":  float(str(latest.get("fiiSellValue", "0")).replace(",","")),
-            "fii_net":   float(str(latest.get("fiiNetValue",  "0")).replace(",","")),
-            "dii_buy":   float(str(latest.get("diiBuyValue",  "0")).replace(",","")),
-            "dii_sell":  float(str(latest.get("diiSellValue", "0")).replace(",","")),
-            "dii_net":   float(str(latest.get("diiNetValue",  "0")).replace(",","")),
-            "all_days":  data[:10],  # last 10 days
+            "date":     latest.get("date",""),
+            "fii_buy":  _get(latest, "fiiBuyValue",  "fii_buy"),
+            "fii_sell": _get(latest, "fiiSellValue", "fii_sell"),
+            "fii_net":  _get(latest, "fiiNetValue",  "fii_net"),
+            "dii_buy":  _get(latest, "diiBuyValue",  "dii_buy"),
+            "dii_sell": _get(latest, "diiSellValue", "dii_sell"),
+            "dii_net":  _get(latest, "diiNetValue",  "dii_net"),
+            "all_days": data[:10],
         }
     except Exception:
         return None

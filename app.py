@@ -1352,19 +1352,54 @@ elif page == "📡 FII/DII Tracker":
                     st.dataframe(pd.DataFrame(rows), hide_index=True,
                                  use_container_width=True)
         else:
-            # Fallback to last row of historical data
-            st.info("💡 Live NSE data unavailable — showing latest historical data")
-            last = fii_df.iloc[-1]
-            k1, k2, k3, k4 = st.columns(4)
+            # Fallback to last 10 rows of historical data
+            st.info("💡 Live NSE data temporarily unavailable — showing latest historical data. NSE publishes data after market close (3:30 PM IST) on trading days.")
+            recent_hist = fii_df.dropna(subset=["fii_net","dii_net"]).tail(10).copy()
+            last = recent_hist.iloc[-1]
             fii_c = "#00d4aa" if last["fii_net"] >= 0 else "#ff6b6b"
             dii_c = "#00d4aa" if last["dii_net"] >= 0 else "#ff6b6b"
-            k1.metric("FII Net",
-                      f'{"+" if last["fii_net"]>=0 else ""}₹{last["fii_net"]:,.0f} Cr')
-            k2.metric("DII Net",
-                      f'{"+" if last["dii_net"]>=0 else ""}₹{last["dii_net"]:,.0f} Cr')
-            k3.metric("Combined",
-                      f'{"+" if last["fii_dii_net"]>=0 else ""}₹{last["fii_dii_net"]:,.0f} Cr')
-            k4.metric("Date", str(last["date"])[:10])
+            k1, k2, k3, k4 = st.columns(4)
+            k1.markdown(f"""<div style='background:#111520;border:1px solid #1e2538;
+                border-radius:12px;padding:16px;text-align:center'>
+                <div style='font-size:11px;color:#7a8299;margin-bottom:4px'>FII NET (Latest)</div>
+                <div style='font-size:1.5rem;font-weight:700;color:{fii_c}'>
+                    {"+" if last["fii_net"]>=0 else ""}₹{last["fii_net"]:,.0f} Cr
+                </div></div>""", unsafe_allow_html=True)
+            k2.markdown(f"""<div style='background:#111520;border:1px solid #1e2538;
+                border-radius:12px;padding:16px;text-align:center'>
+                <div style='font-size:11px;color:#7a8299;margin-bottom:4px'>DII NET (Latest)</div>
+                <div style='font-size:1.5rem;font-weight:700;color:{dii_c}'>
+                    {"+" if last["dii_net"]>=0 else ""}₹{last["dii_net"]:,.0f} Cr
+                </div></div>""", unsafe_allow_html=True)
+            combined = last["fii_net"] + last["dii_net"]
+            comb_c = "#00d4aa" if combined >= 0 else "#ff6b6b"
+            k3.markdown(f"""<div style='background:#111520;border:1px solid #1e2538;
+                border-radius:12px;padding:16px;text-align:center'>
+                <div style='font-size:11px;color:#7a8299;margin-bottom:4px'>COMBINED</div>
+                <div style='font-size:1.5rem;font-weight:700;color:{comb_c}'>
+                    {"+" if combined>=0 else ""}₹{combined:,.0f} Cr
+                </div></div>""", unsafe_allow_html=True)
+            k4.markdown(f"""<div style='background:#111520;border:1px solid #1e2538;
+                border-radius:12px;padding:16px;text-align:center'>
+                <div style='font-size:11px;color:#7a8299;margin-bottom:4px'>AS OF DATE</div>
+                <div style='font-size:1rem;font-weight:700;color:#e4e8f0'>
+                    {str(last["date"])[:10]}
+                </div></div>""", unsafe_allow_html=True)
+
+            # Show last 10 days table from historical data
+            st.markdown("<br>**Last 10 Trading Days (Historical)**", unsafe_allow_html=True)
+            display = recent_hist[["date","fii_net","dii_net"]].copy()
+            display["combined"] = display["fii_net"] + display["dii_net"]
+            display["signal"]   = display["combined"].apply(
+                lambda x: "🟢 Bullish" if x > 0 else "🔴 Bearish"
+            )
+            display.columns = ["Date","FII Net (₹Cr)","DII Net (₹Cr)","Combined (₹Cr)","Signal"]
+            display = display.sort_values("Date", ascending=False)
+            st.dataframe(display.style.format({
+                "FII Net (₹Cr)":  "{:,.0f}",
+                "DII Net (₹Cr)":  "{:,.0f}",
+                "Combined (₹Cr)": "{:,.0f}",
+            }), hide_index=True, use_container_width=True)
 
         # ── Correlation stats ─────────────────────────────────
         st.markdown("<br>**FII/DII → NIFTY Correlations**", unsafe_allow_html=True)
