@@ -7,7 +7,12 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
+import os
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+# Load API keys from .env file
+load_dotenv()
 
 # ── Project modules ───────────────────────────────────────────
 from src.config import (
@@ -19,7 +24,7 @@ from src.data_sources  import fetch_stock_data, fetch_portfolio_data
 from src.dataloader   import load_stock_data, get_close_prices, load_portfolio_data, calculate_returns, get_stock_info
 from src.model        import train_lstm_model, predict_next_price, forecast_prices
 from src.features     import create_extended_features
-from src.sentiment    import get_news_sentiment, get_stock_news
+from src.sentiment    import analyse_sentiment, has_news_api_key
 from src.risk         import calculate_risk_metrics
 from src.explainability  import get_technical_signals, compute_feature_importance, shap_chart
 from src.ipo_predictor   import load_ipo_model, predict_ipo, get_current_nifty_trend, find_similar_ipos, SECTORS
@@ -272,11 +277,35 @@ with st.sidebar:
 
     st.markdown("---")
 
-    period = st.select_slider(
-        "Data Period",
-        options=["1mo", "3mo", "6mo", "1y", "2y"],
-        value="6mo",
+    # ── Timeframe Selectors ──────────────────────────────────
+    st.markdown(
+        "<div style='font-size:12px;color:#7a8299;margin:12px 0 6px'>🗓️ TIMEFRAME</div>",
+        unsafe_allow_html=True
     )
+    
+    if 'period' not in st.session_state:
+        st.session_state.period = '1y'
+
+    # Horizontal button grid for periods
+    p_row1 = st.columns(4)
+    p_row2 = st.columns(3)
+    
+    periods_r1 = [("6M", "6mo"), ("1Y", "1y"), ("2Y", "2y"), ("5Y", "5y")]
+    periods_r2 = [("10Y", "10y"), ("15Y", "15y"), ("30Y", "30y")]
+    
+    for i, (label, val) in enumerate(periods_r1):
+        if p_row1[i].button(label, key=f"p_{val}", use_container_width=True,
+                             type="primary" if st.session_state.period == val else "secondary"):
+            st.session_state.period = val
+            st.rerun()
+            
+    for i, (label, val) in enumerate(periods_r2):
+        if p_row2[i].button(label, key=f"p_{val}", use_container_width=True,
+                             type="primary" if st.session_state.period == val else "secondary"):
+            st.session_state.period = val
+            st.rerun()
+    
+    period = st.session_state.period
 
     st.markdown("---")
     st.caption(f"Last updated: {datetime.now().strftime('%d %b %Y, %H:%M')}")
@@ -398,20 +427,36 @@ risk_metrics = volatility = sharpe_ratio = max_drawdown = advisor = None
 if page not in _STOCK_FREE_PAGES:
     with st.spinner("Loading AI model…"):
         cp_hash = hash(close_prices.values.tobytes())
-        model, scaler, last_sequence = train_lstm_model(stock, cp_hash, close_prices)
+        model, scaler, last_sequence, train_mae, test_mae = train_lstm_model(stock, cp_hash, close_prices)
 
     predicted_price = predict_next_price(model, scaler, last_sequence)
     current_price   = float(close_prices.iloc[-1])
     forecast_5d     = forecast_prices(model, scaler, last_sequence, days=5)
 
     with st.spinner("Analysing sentiment & risk…"):
-        sentiment_score, sentiment_label, headlines, sentiment_source = get_news_sentiment(stock)
-        risk_metrics = calculate_risk_metrics(close_prices)
+        _sent = analyse_sentiment(stock, company_name=st.session_state.get("selected_stock_name"))
+        sentiment_score  = _sent["score"]
+        sentiment_label  = _sent["label"]
+        articles         = _sent["articles"]
+        headlines        = [a["title"] for a in articles]
+        sentiment_source = _sent["model"]
 
-    volatility   = risk_metrics["volatility"]
-    sharpe_ratio = risk_metrics["sharpe_ratio"]
-    max_drawdown = risk_metrics["max_drawdown"]
-    advisor = run_ai_advisor(current_price, predicted_price, volatility, sentiment_score)
+        # Risk metrics expect returns, not absolute prices
+        risk_metrics = calculate_risk_metrics(
+            close_prices.pct_change().dropna(),
+            stock_ticker=stock,
+            period=period
+        )
+
+    volatility   = risk_metrics.get("volatility", 0.0)
+    sharpe_ratio = risk_metrics.get("sharpe", 0.0)
+    max_drawdown = risk_metrics.get("max_drawdown", 0.0)
+    
+    # Enhanced advisor call with test_mae for better confidence
+    advisor = run_ai_advisor(
+        current_price, predicted_price, volatility, sentiment_score,
+        test_mae=test_mae
+    )
 
 
 # ══════════════════════════════════════════════════════════════
@@ -453,20 +498,57 @@ if page == "📊 Dashboard":
     chart_tab, bb_tab, macd_tab = st.tabs(["Price & MAs", "Bollinger Bands", "MACD"])
 
     with chart_tab:
+        # Google-style logic: color based on net performance in period
+        is_up      = close_prices.iloc[-1] >= close_prices.iloc[0]
+        chart_color = "#00d4aa" if is_up else "#ff5c7c"
+        fill_color  = "rgba(0, 212, 170, 0.08)" if is_up else "rgba(255, 92, 124, 0.08)"
+
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=close_prices.index, y=close_prices,
-                                 name="Close", line=dict(color="#00d4aa", width=1.8)))
+        fig.add_trace(go.Scatter(
+            x=close_prices.index, y=close_prices,
+            name="Close",
+            line=dict(color=chart_color, width=2),
+            fill="tozeroy",
+            fillcolor=fill_color,
+            hoverinfo="x+y",
+        ))
+
+        # Thinner SMAs with coordinated colors
         if "SMA20" in extended:
-            fig.add_trace(go.Scatter(x=extended.index, y=extended["SMA20"],
-                                     name="SMA 20", line=dict(color="#6c63ff", width=1, dash="dot")))
+            fig.add_trace(go.Scatter(
+                x=extended.index, y=extended["SMA20"],
+                name="SMA 20", line=dict(color="rgba(108, 99, 255, 0.5)", width=1.2, dash="dash")
+            ))
         if "SMA50" in extended:
-            fig.add_trace(go.Scatter(x=extended.index, y=extended["SMA50"],
-                                     name="SMA 50", line=dict(color="#ffb347", width=1, dash="dot")))
-        fig.update_layout(template="plotly_dark", height=420,
-                          xaxis_title="Date", yaxis_title="Price (₹)",
-                          legend=dict(orientation="h", y=1.02),
-                          margin=dict(l=0,r=0,t=10,b=0))
-        st.plotly_chart(fig, width='stretch')
+            fig.add_trace(go.Scatter(
+                x=extended.index, y=extended["SMA50"],
+                name="SMA 50", line=dict(color="rgba(255, 179, 71, 0.5)", width=1.2, dash="dash")
+            ))
+
+        fig.update_layout(
+            template="plotly_dark",
+            height=450,
+            showlegend=True,
+            legend=dict(orientation="h", y=1.02, x=0, font=dict(size=10)),
+            margin=dict(l=0, r=0, t=30, b=0),
+            xaxis=dict(
+                showgrid=False,
+                zeroline=False,
+                showline=False,
+                tickfont=dict(color="#7a8299", size=10),
+            ),
+            yaxis=dict(
+                gridcolor="rgba(122, 130, 153, 0.1)",
+                zeroline=False,
+                showline=False,
+                tickfont=dict(color="#7a8299", size=10),
+                side="right",
+            ),
+            hovermode="x unified",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
     with bb_tab:
         if "BB_Upper" in extended:
@@ -527,157 +609,221 @@ if page == "📊 Dashboard":
 # 🧠 AI PREDICTION
 # ─────────────────────────────────────────────────────────────
 elif page == "🧠 AI Prediction":
-    st.subheader("AI Investment Recommendation")
+    st.markdown("""
+        <div style='margin-bottom:24px'>
+            <h2 style='margin:0;font-size:1.6rem;font-weight:700;
+                       background:linear-gradient(135deg,#00d4aa,#6c63ff);
+                       -webkit-background-clip:text;-webkit-text-fill-color:transparent'>
+                🧠 AI Investment Intelligence
+            </h2>
+            <p style='color:#7a8299;margin:4px 0 0;font-size:0.9rem'>
+                Multi-factor signal decomposition · Institutional-grade consensus · Risk-adjusted verdict
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
 
-    left, right = st.columns([1, 2])
+    top_l, top_r = st.columns([1, 1.2])
 
-    with left:
-        # Recommendation badge
+    with top_l:
+        # Decision Badge
         badge_class = {
-            "Strong Buy": "badge-strong-buy",
-            "Buy":        "badge-buy",
-            "Hold":       "badge-hold",
-            "Sell":       "badge-sell",
+            "Strong Buy": "badge-strong-buy", "Buy": "badge-buy",
+            "Hold": "badge-hold", "Sell": "badge-sell",
         }.get(advisor["recommendation"], "badge-hold")
-
+        
         st.markdown(f"""
-        <div style="text-align:center;padding:20px 0">
-          <div style="color:#7a8299;font-size:12px;margin-bottom:8px">AI DECISION</div>
-          <span class="rec-badge {badge_class}">{advisor['recommendation']}</span>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px;text-align:center;height:100%">
+          <div style="color:var(--muted);font-size:12px;margin-bottom:12px;letter-spacing:1px;font-weight:600">PREDICTED VERDICT</div>
+          <span class="rec-badge {badge_class}" style="font-size:32px;padding:12px 36px">{advisor['recommendation']}</span>
+          <div style="margin-top:20px;display:flex;justify-content:center;gap:32px">
+            <div>
+                <div style="color:var(--muted);font-size:10px">CONFIDENCE</div>
+                <div style="font-size:18px;font-weight:700;color:var(--accent)">{advisor['confidence']}%</div>
+            </div>
+            <div style="border-left:1px solid var(--border);height:30px"></div>
+            <div>
+                <div style="color:var(--muted);font-size:10px">RISK LEVEL</div>
+                <div style="font-size:18px;font-weight:700;color:#ffb347">{advisor['risk']}</div>
+            </div>
+          </div>
         </div>
         """, unsafe_allow_html=True)
 
-        # Confidence gauge
-        conf = advisor["confidence"]
-        gauge = go.Figure(go.Indicator(
-            mode="gauge+number",
-            value=conf,
-            number={"suffix": "%", "font": {"size": 28, "color": "#e4e8f0"}},
-            title={"text": "Confidence", "font": {"size": 13, "color": "#7a8299"}},
-            gauge={
-                "axis":  {"range": [0, 100], "tickcolor": "#7a8299"},
-                "bar":   {"color": "#00d4aa"},
-                "bgcolor": "#111520",
-                "steps": [
-                    {"range": [0,  40], "color": "rgba(255,92,124,.15)"},
-                    {"range": [40, 70], "color": "rgba(255,179,71,.15)"},
-                    {"range": [70,100], "color": "rgba(0,212,170,.15)"},
-                ],
-                "threshold": {"line": {"color": "#00d4aa", "width": 3}, "value": conf}
-            }
+    with top_r:
+        # Decision Factor Radar
+        radar_fig = go.Figure(data=go.Scatterpolar(
+            r=list(advisor["factor_scores"].values()),
+            theta=list(advisor["factor_scores"].keys()),
+            fill='toself',
+            fillcolor='rgba(0, 212, 170, 0.25)',
+            line=dict(color='#00d4aa', width=3),
         ))
-        gauge.update_layout(
-            height=220, paper_bgcolor="rgba(0,0,0,0)",
-            margin=dict(l=20,r=20,t=40,b=10)
+        radar_fig.update_layout(
+            polar=dict(
+                radialaxis=dict(visible=True, range=[0, 100], showticklabels=False, gridcolor="rgba(122,130,153,0.1)"),
+                angularaxis=dict(gridcolor="rgba(122,130,153,0.1)", linecolor="rgba(122,130,153,0.1)", tickfont=dict(size=10, color="#7a8299")),
+                bgcolor="rgba(0,0,0,0)",
+            ),
+            showlegend=False, height=220,
+            margin=dict(l=40, r=40, t=20, b=20),
+            paper_bgcolor="rgba(0,0,0,0)",
         )
-        st.plotly_chart(gauge, width='stretch')
+        st.plotly_chart(radar_fig, use_container_width=True)
 
-        # Risk metrics
-        st.markdown("**Risk Metrics**")
-        st.metric("Volatility",    f"{volatility:.2%}")
-        st.metric("Sharpe Ratio",  f"{sharpe_ratio:.2f}")
-        st.metric("Sortino Ratio", f"{risk_metrics['sortino_ratio']:.2f}")
-        st.metric("Max Drawdown",  f"{max_drawdown:.2%}")
-        st.metric("VaR (95%)",     f"{risk_metrics['var_95']:.2%}")
-        st.metric("CVaR (95%)",    f"{risk_metrics['cvar_95']:.2%}")
+    st.markdown("---")
 
-    with right:
-        st.markdown("**AI Reasoning**")
-        for r in advisor["reasons"]:
-            st.markdown(f"› {r}")
+    col_l, col_r = st.columns([1.1, 0.9])
+
+    with col_l:
+        st.markdown("### 🔍 Model Explainability")
+        imp = compute_feature_importance(model, scaler, close_prices)
+        st.plotly_chart(shap_chart(imp), use_container_width=True)
+        
+        # Technical Signal Capsules (Symmetric Grid)
+        signals = get_technical_signals(close_prices)
+        if signals:
+            st.markdown("<div style='margin-top:16px'></div>", unsafe_allow_html=True)
+            s_rows = st.columns(3)
+            # We map signals to these slots
+            for i, (name, (val, label, desc)) in enumerate(signals.items()):
+                target_col = s_rows[i % 3]
+                color = "#00d4aa" if "🟢" in label else "#ff5c7c" if "🔴" in label else "#ffb347"
+                icon  = "●"
+                target_col.markdown(f"""
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center;margin-bottom:12px">
+                  <div style="font-size:9px;color:var(--muted);margin-bottom:6px;font-weight:600">{name.upper()}</div>
+                  <div style="font-size:14px;font-weight:700;color:{color};line-height:1.2">{label}</div>
+                  <div style="font-size:18px;color:{color if icon == '●' else '#fff'}">{icon}</div>
+                  <div style="font-size:10px;color:var(--muted);margin-top:2px">{val}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    with col_r:
+        st.markdown("### Detailed Analysis & Reasoning")
+        
+        reasoning_icons = ["📈", "📰", "🛡️", "📊", "🧭"]
+        for i, reason in enumerate(advisor["reasons"]):
+            icon = reasoning_icons[i % len(reasoning_icons)]
+            style = "alert-info"
+            if "📈" in reason or "🟢" in reason or "Bullish" in reason: style = "alert-ok"
+            elif "📉" in reason or "🔴" in reason or "Bearish" in reason: style = "alert-danger"
+            elif "⚠️" in reason or "🟡" in reason: style = "alert-warning"
+
+            st.markdown(f"""
+            <div class="{style}" style="display:flex;align-items:flex-start;gap:12px;padding:16px;border-radius:12px;margin-bottom:12px">
+                <span style="font-size:20px;margin-top:-2px">{icon}</span>
+                <div style="font-size:14px;line-height:1.5">{reason}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
         st.markdown("---")
-
-        st.markdown("**Narrative Insight**")
-        insight = generate_ai_insight(
-            advisor["recommendation"], advisor["price_change"],
-            sentiment_label, volatility
-        )
-        for line in insight:
-            st.markdown(line)
-
-        st.markdown("---")
-
-        st.markdown("**Model Explainability**")
-        exp_tab1, exp_tab2 = st.tabs(["Technical Signals", "Feature Importance"])
-
-        with exp_tab1:
-            signals = get_technical_signals(close_prices)
-            if signals:
-                for indicator, (value, signal) in signals.items():
-                    color = {"Overbought":"🔴","Oversold":"🟢","Bullish":"🟢",
-                             "Bearish":"🔴","Golden Cross ↑":"🟢","Death Cross ↓":"🔴"
-                             }.get(signal, "🟡")
-                    st.markdown(f"{color} **{indicator}**: `{value}` — {signal}")
-            else:
-                st.info("Not enough data to compute signals.")
-
-        with exp_tab2:
-            with st.spinner("Computing feature importance…"):
-                imp   = compute_feature_importance(model, scaler, close_prices)
-                s_fig = shap_chart(imp)
-            if imp:
-                st.plotly_chart(s_fig, width='stretch')
-            else:
-                st.info("Not enough data to compute feature importance.")
+        st.markdown("#### Risk Profile metrics")
+        r1, r2 = st.columns(2)
+        r1.metric("Sortino Ratio", f"{risk_metrics.get('sortino', 0):.2f}")
+        r2.metric("Beta vs NIFTY", f"{risk_metrics.get('beta', 1.0):.2f}")
 
 
-# ─────────────────────────────────────────────────────────────
-# 📰 MARKET INTELLIGENCE
-# ─────────────────────────────────────────────────────────────
+
 elif page == "📰 Market Intelligence":
-    st.subheader("Market Intelligence")
-
-    # ── Sentiment source badge ────────────────────────────────
-    from src.sentiment import has_news_api_key
-    if not has_news_api_key():
-        st.info(
-            "💡 **Tip:** You\'re using yfinance news + VADER sentiment (no setup needed). "
-            "For richer, more accurate sentiment analysis, add your free "
-            "[NewsAPI key](https://newsapi.org/register) as `NEWS_API_KEY` in your `.env` file.",
-            icon=None,
-        )
-    else:
-        st.success(f"✅ Sentiment powered by: **{sentiment_source}**")
-
+    # ── Sentiment breakdown ────────────────────────────────────
     c1, c2, c3 = st.columns(3)
-    c1.metric("Sentiment Score", f"{sentiment_score:+.3f}")
-    c2.metric("Sentiment Label", sentiment_label)
-    c3.metric("News Articles",   str(len(headlines)))
+    c1.metric("Overall Sentiment", sentiment_label, f"{sentiment_score:+.3f}")
+    c2.metric("Intelligence Layer",  sentiment_source)
+    c3.metric("Coverage (Articles)", str(len(articles)))
 
     # Alerts
-    st.markdown("#### Market Alerts")
+    st.markdown("#### 💡 AI Market Alerts")
     alerts = detect_market_alerts(close_prices, sentiment_score)
 
     if not alerts:
-        st.markdown('<div class="alert-ok">✅ No significant risk signals detected.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="alert-ok">✅ No immediate high-risk signals detected in current sentiment/price flow.</div>', unsafe_allow_html=True)
     else:
         for a in alerts:
             css_class = {"danger": "alert-danger", "warning": "alert-warning"}.get(a["level"], "alert-info")
             icon      = {"danger": "🚨", "warning": "⚠️"}.get(a["level"], "ℹ️")
             st.markdown(f'<div class="{css_class}">{icon} {a["message"]}</div>', unsafe_allow_html=True)
 
-    # News headlines
-    st.markdown("#### Latest News")
-    if not headlines:
-        st.warning("No headlines found for this stock. This may be a lesser-known ticker — try searching a major index stock.")
-    else:
-        for h in headlines:
-            st.markdown(f"• {h}")
+    st.markdown("---")
 
-    # RSI chart
-    st.markdown("#### RSI (14-day)")
-    if "RSI" in create_extended_features(data).columns:
+    # Symmetric News & RSI Layout
+    news_l, chart_r = st.columns([1.2, 0.8])
+
+    with news_l:
+        header_col1, header_col2 = st.columns([1, 1])
+        header_col1.markdown("#### 📰 Latest Intelligence")
+        if header_col2.button("🔄 Refresh News", key="refresh_news_btn", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+        if not articles:
+            st.warning("No recent headlines found for this ticker.")
+        else:
+            for a in articles[:10]:
+                source = a.get('source', 'Market News')
+                url = a.get('url', '#')
+                score = a.get('_score', 0.0)
+                
+                # Sentiment dot color
+                dot_color = "#00d4aa" if score > 0.05 else "#ff5c7c" if score < -0.05 else "#7a8299"
+                
+                st.markdown(f"""
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;position:relative;overflow:hidden">
+                    <div style="position:absolute;top:0;left:0;width:4px;height:100%;background:{dot_color}"></div>
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+                        <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px">
+                            {source}
+                        </span>
+                        <span style="font-size:10px;font-weight:700;color:{dot_color}">
+                            SCORE: {score:+.2f}
+                        </span>
+                    </div>
+                    <div style="font-size:15px;font-weight:600;margin-bottom:6px;color:var(--text);line-height:1.4">
+                        {a['title']}
+                    </div>
+                    <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5">
+                        {a.get('description', 'No description available...')[:160]}...
+                    </div>
+                    <div style="display:flex;justify-content:flex-end">
+                        <a href="{url}" target="_blank" style="text-decoration:none;font-size:12px;color:var(--accent);font-weight:600;padding:4px 8px;border:1px solid var(--accent);border-radius:6px;transition:0.2s">
+                            Read Full Story ↗
+                        </a>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    with chart_r:
+        st.markdown("#### 🌊 Momentum Flow (RSI)")
         ext = create_extended_features(data)
-        rsi_fig = go.Figure()
-        rsi_fig.add_hline(y=70, line=dict(color="#ff5c7c", dash="dot"), annotation_text="Overbought")
-        rsi_fig.add_hline(y=30, line=dict(color="#00d4aa", dash="dot"), annotation_text="Oversold")
-        rsi_fig.add_trace(go.Scatter(x=ext.index, y=ext["RSI"], name="RSI",
-                                     line=dict(color="#6c63ff", width=1.5)))
-        rsi_fig.update_layout(template="plotly_dark", height=280,
-                              yaxis=dict(range=[0,100]),
-                              margin=dict(l=0,r=0,t=10,b=0))
-        st.plotly_chart(rsi_fig, width='stretch')
+        if "RSI" in ext.columns:
+            rsi_fig = go.Figure()
+            # Dynamic coloring for RSI
+            current_rsi = ext["RSI"].iloc[-1]
+            rsi_color   = "#ff5c7c" if current_rsi > 70 else "#00d4aa" if current_rsi < 30 else "#6c63ff"
+            
+            rsi_fig.add_hline(y=70, line=dict(color="rgba(255,92,124,0.3)", dash="dot"))
+            rsi_fig.add_hline(y=30, line=dict(color="rgba(0,212,170,0.3)", dash="dot"))
+            rsi_fig.add_trace(go.Scatter(
+                x=ext.index, y=ext["RSI"], name="RSI (14)",
+                line=dict(color=rsi_color, width=2),
+                fill="tozeroy",
+                fillcolor=f"rgba{tuple(list(int(rsi_color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)) + [0.05])}"
+            ))
+            rsi_fig.update_layout(
+                template="plotly_dark", height=320,
+                yaxis=dict(range=[0,100], gridcolor="rgba(122,130,153,0.1)", side="right"),
+                xaxis=dict(showgrid=False),
+                margin=dict(l=0,r=0,t=10,b=0),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+            )
+            st.plotly_chart(rsi_fig, use_container_width=True)
+            
+            st.markdown(f"""
+            <div style="background:var(--surface);border-radius:10px;padding:16px;border:1px solid var(--border)">
+                <div style="color:var(--muted);font-size:11px">CURRENT RSI</div>
+                <div style="font-size:24px;font-weight:700;color:{rsi_color}">{current_rsi:.1f}</div>
+                <div style="font-size:12px;color:var(--muted)">{'Overbought conditions' if current_rsi > 70 else 'Oversold opportunity' if current_rsi < 30 else 'Neutral momentum'}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -881,7 +1027,7 @@ elif page == "💼 Portfolio Optimizer":
 
     c1, c2 = st.columns([1.2, 1])
     with c1:
-        st.plotly_chart(pie_fig, width='stretch')
+        st.plotly_chart(pie_fig, use_container_width=True)
     with c2:
         st.markdown("**Allocation Breakdown**")
         # Rename Stock column to readable name for display
@@ -897,7 +1043,7 @@ elif page == "💼 Portfolio Optimizer":
                 "Volatility (%)":  "{:.2f}%",
                 "Sharpe":          "{:.2f}",
             }).background_gradient(subset=["Weight (%)"], cmap="Greens"),
-            width='stretch',
+            use_container_width=True,
             hide_index=True,
         )
 
@@ -913,7 +1059,7 @@ elif page == "💼 Portfolio Optimizer":
         labels={"Sharpe": "Sharpe Ratio"},
     )
     ef_fig.update_layout(template="plotly_dark", margin=dict(l=0,r=0,t=10,b=0))
-    st.plotly_chart(ef_fig, width='stretch')
+    st.plotly_chart(ef_fig, use_container_width=True)
 
     # Correlation heatmap
     st.markdown("#### Correlation Matrix")
@@ -954,7 +1100,11 @@ elif page == "🔁 Backtesting":
         legend=dict(orientation="h", y=1.05),
         margin=dict(l=0,r=0,t=10,b=0),
     )
-    st.plotly_chart(bt_fig, width='stretch')
+    st.plotly_chart(bt_fig, use_container_width=True)
+
+    # Drawdown chart
+    from src.backtest import build_drawdown_fig, build_monthly_heatmap
+    st.plotly_chart(build_drawdown_fig(comparison), use_container_width=True)
 
     # Metrics table
     st.markdown("#### Strategy Performance")
@@ -965,8 +1115,14 @@ elif page == "🔁 Backtesting":
             "Total Return": f"{m['total_return']:+.2f}%",
             "Max Drawdown": f"{m['max_drawdown']:.2f}%",
             "Sharpe Ratio": f"{m['sharpe_ratio']:.3f}",
+            "Win Rate":     f"{m['win_rate']:.1f}%",
         })
-    st.dataframe(pd.DataFrame(rows).set_index("Strategy"), width='stretch')
+    st.dataframe(pd.DataFrame(rows).set_index("Strategy"), use_container_width=True)
+
+    # Monthly heatmap for AI Strategy
+    if "AI Strategy" in comparison.columns:
+        st.markdown("#### AI Strategy Monthly Returns")
+        st.plotly_chart(build_monthly_heatmap(comparison["AI Strategy"], "AI Strategy"), use_container_width=True)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -981,33 +1137,21 @@ elif page == "🔬 Model Evaluation":
     st.plotly_chart(evaluation["chart"], width='stretch')
 
     e1, e2, e3, e4 = st.columns(4)
-    e1.metric("MAE",        f"₹{evaluation['mae']:.2f}")
-    e2.metric("RMSE",       f"₹{evaluation['rmse']:.2f}")
-    e3.metric("MAPE",       f"{evaluation['mape']:.2f}%")
-    e4.metric("Confidence", f"{evaluation['confidence']:.1f}%")
+    e1.metric("MAE (Test)",   f"₹{evaluation['test_mae']:.2f}")
+    e2.metric("RMSE (Test)",  f"₹{evaluation['test_rmse']:.2f}")
+    e3.metric("MAPE",         f"{evaluation['mape']:.2f}%")
+    e4.metric("Confidence",   f"{evaluation['confidence']:.1f}%")
 
     st.markdown("#### Model Confidence")
     st.progress(int(evaluation["confidence"]) / 100)
 
     # Residuals
     st.markdown("#### Prediction Residuals")
+    st.plotly_chart(evaluation["residual_chart"], use_container_width=True)
+    
     actual      = evaluation["actual"]
     predictions = evaluation["predictions"]
     residuals   = actual - predictions
-
-    res_fig = go.Figure()
-    res_fig.add_trace(go.Scatter(
-        y=residuals, mode="lines",
-        line=dict(color="#6c63ff", width=1),
-        name="Residual",
-    ))
-    res_fig.add_hline(y=0, line=dict(color="#7a8299", dash="dot"))
-    res_fig.update_layout(
-        template="plotly_dark", height=280,
-        yaxis_title="Residual (₹)",
-        margin=dict(l=0,r=0,t=10,b=0),
-    )
-    st.plotly_chart(res_fig, width='stretch')
 
     # Residual distribution
     hist_fig = px.histogram(

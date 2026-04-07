@@ -21,11 +21,12 @@ import logging
 from datetime import datetime, timedelta
 
 logger  = logging.getLogger(__name__)
-_AV_KEY = os.getenv("ALPHA_VANTAGE_KEY", "E7RBUJ17S6H24GJO")
+_AV_KEY = os.getenv("ALPHA_VANTAGE_KEY", "")   # No hardcoded fallback — set via env var
 
 _PERIOD_DAYS = {
     "1mo": 30,  "3mo": 90,  "6mo": 180,
-    "1y": 365,  "2y": 730,  "5y": 1825,
+    "1y": 365,  "2y": 730,  "5y": 1825, "10y": 3650,
+    "15y": 5475, "30y": 10950,
 }
 
 _BROWSER_HEADERS = {

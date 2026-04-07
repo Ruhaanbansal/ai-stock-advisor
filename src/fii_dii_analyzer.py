@@ -332,20 +332,21 @@ def detect_patterns(df: pd.DataFrame) -> list[dict]:
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_live_fii_dii() -> dict | None:
-    """Fetch today's / latest FII/DII data from NSE India."""
+    """
+    Fetch today's / latest FII/DII data from NSE India.
+    Uses curl_cffi to impersonate Chrome TLS fingerprint, bypassing NSE bot blocks.
+    """
     try:
-        import requests
+        from curl_cffi import requests
         from datetime import datetime, timedelta
 
-        session = requests.Session()
-        session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                          "AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-            "Referer":    "https://www.nseindia.com/",
-            "Accept":     "application/json",
-        })
+        # Step 1: Initialize session with Chrome impersonation
+        session = requests.Session(impersonate="chrome120")
+        
+        # Step 2: Establish session on homepage
         session.get("https://www.nseindia.com/", timeout=10)
 
+        # Step 3: Fetch the FII/DII data
         end   = datetime.today()
         start = end - timedelta(days=7)
         url   = (
@@ -353,39 +354,42 @@ def fetch_live_fii_dii() -> dict | None:
             f"?startDate={start.strftime('%d-%b-%Y')}"
             f"&endDate={end.strftime('%d-%b-%Y')}"
         )
+        
         r = session.get(url, timeout=15)
         if r.status_code != 200:
             return None
 
-        data = r.json()
-        if not data:
+        raw_data = r.json()
+        if not raw_data:
             return None
 
+        # Data usually arrives in Chronological order (Oldest -> Newest)
+        # We need the most recent entry that has actual data values.
+        
         def _safe_float(val) -> float:
             try:
-                return float(str(val).replace(",","").replace("−","-").strip() or "0")
+                # Handle commas, unicode minus signs, and empty strings
+                s = str(val).replace(",","").replace("−","-").strip()
+                return float(s or "0")
             except Exception:
                 return 0.0
 
-        # Find most recent entry with non-zero data
+        # Iterate backwards to find the LATEST non-zero entry
         latest = None
-        for entry in data:
-            fii_n = _safe_float(entry.get("fiiNetValue") or
-                                 entry.get("fii_net") or 0)
-            dii_n = _safe_float(entry.get("diiNetValue") or
-                                 entry.get("dii_net") or 0)
+        for entry in reversed(raw_data):
+            fii_n = _safe_float(entry.get("fiiNetValue") or entry.get("fii_net") or 0)
+            dii_n = _safe_float(entry.get("diiNetValue") or entry.get("dii_net") or 0)
             if abs(fii_n) > 0 or abs(dii_n) > 0:
                 latest = entry
                 break
 
         if latest is None:
-            return None   # all zeros — trigger fallback
+            return None
 
-        # Handle both camelCase and snake_case keys
+        # Field mapping (handles camelCase and snake_case)
         def _get(d, *keys):
             for k in keys:
-                if k in d:
-                    return _safe_float(d[k])
+                if k in d: return _safe_float(d[k])
             return 0.0
 
         return {
@@ -396,7 +400,7 @@ def fetch_live_fii_dii() -> dict | None:
             "dii_buy":  _get(latest, "diiBuyValue",  "dii_buy"),
             "dii_sell": _get(latest, "diiSellValue", "dii_sell"),
             "dii_net":  _get(latest, "diiNetValue",  "dii_net"),
-            "all_days": data[:10],
+            "all_days": raw_data[::-1][:10], # Most recent 10 days
         }
     except Exception:
         return None
