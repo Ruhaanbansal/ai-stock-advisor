@@ -76,4 +76,4 @@ def show_ipo_page():
             
             # Market Intelligence Insight
             nifty_trend = st.session_state.ipo_trend
-            st.info(f"**Market Backdrop:** Nifty 50 is currently in a **{nifty_trend}** trend, which provides a **{'+ve' if nifty_trend == 'Bullish' else '-ve'}** tailwind for listing Day 1.")
+            st.info(f"<b>Market Backdrop:</b> Nifty 50 is currently in a <b>{nifty_trend}</b> trend, which provides a <b>{'+ve' if nifty_trend == 'Bullish' else '-ve'}</b> tailwind for listing Day 1.")

@@ -28,7 +28,7 @@ def show_evaluation_page(model, scaler, close_prices, train_mae, test_mae):
         st.markdown("---")
         st.markdown("#### Model Reliability Indicator")
         reliability = "High" if test_mae < (close_prices.mean() * 0.05) else "Moderate"
-        st.info(f"Model Reliability: **{reliability}**")
+        st.info(f"Model Reliability: <b>{reliability}</b>")
         st.caption("Determined by the ratio of MAE to price volatility.")
 
     with col2:

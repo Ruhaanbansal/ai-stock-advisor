@@ -62,4 +62,4 @@ def show_tracker_page():
         
         st.markdown("#### 🔄 Correlation with Nifty 50")
         corr = correlation_analysis(historical_data)
-        st.info(f"The FII flow has a **{corr:.2f}** correlation with the Nifty 50 Index over the last 90 days.")
+        st.info(f"The FII flow has a <b>{corr:.2f}</b> correlation with the Nifty 50 Index over the last 90 days.")

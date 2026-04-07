@@ -66,12 +66,12 @@ def generate_ai_insight(
 
     # Final call
     action_map = {
-        "Strong Buy": "The combined signals are strongly positive. The AI recommends **Strong Buy**.",
-        "Buy":        "Overall conditions are favourable. The AI recommends **Buy**.",
-        "Hold":       "Mixed signals suggest maintaining current positions. The AI recommends **Hold**.",
-        "Sell":       "Risk factors outweigh upside potential. The AI recommends **Sell**.",
+        "Strong Buy": "The combined signals are strongly positive. The AI recommends <b>Strong Buy</b>.",
+        "Buy":        "Overall conditions are favourable. The AI recommends <b>Buy</b>.",
+        "Hold":       "Mixed signals suggest maintaining current positions. The AI recommends <b>Hold</b>.",
+        "Sell":       "Risk factors outweigh upside potential. The AI recommends <b>Sell</b>.",
     }
-    insight.append(action_map.get(recommendation, f"AI recommendation: **{recommendation}**."))
+    insight.append(action_map.get(recommendation, f"AI recommendation: <b>{recommendation}</b>."))
 
     return insight
 
@@ -92,29 +92,29 @@ def generate_chart_insights(data, extended) -> list[str]:
         sma20 = float(extended['SMA20'].iloc[-1])
         sma50 = float(extended['SMA50'].iloc[-1])
         if curr_price > sma20 > sma50:
-            insights.append("🚀 **Strong Uptrend**: Price is holding above both 20 & 50-day MAs.")
+            insights.append("🚀 <b>Strong Uptrend</b>: Price is holding above both 20 & 50-day MAs.")
         elif curr_price < sma20 < sma50:
-            insights.append("📉 **Bearish Trend**: Price is currently below short & medium term MAs.")
+            insights.append("📉 <b>Bearish Trend</b>: Price is currently below short & medium term MAs.")
 
     # 2. Momentum (RSI)
     if 'RSI' in extended:
         rsi = float(extended['RSI'].iloc[-1])
         if rsi > 70:
-            insights.append(f"⚠️ **Overbought**: RSI ({rsi:.1f}) suggests potential profit booking soon.")
+            insights.append(f"⚠️ <b>Overbought</b>: RSI ({rsi:.1f}) suggests potential profit booking soon.")
         elif rsi < 30:
-            insights.append(f"⚡ **Oversold**: RSI ({rsi:.1f}) indicates high recovery potential.")
+            insights.append(f"⚡ <b>Oversold</b>: RSI ({rsi:.1f}) indicates high recovery potential.")
 
     # 3. Volume Analysis
     if 'Volume' in data.columns:
         avg_vol = data['Volume'].tail(20).mean()
         curr_vol = data['Volume'].iloc[-1]
         if curr_vol > avg_vol * 1.5:
-            insights.append(f"📊 **Volume Spike**: Significant institutional activity detected.")
+            insights.append(f"📊 <b>Volume Spike</b>: Significant institutional activity detected.")
 
     # 4. Bollinger Band Context
     if 'BB_Upper' in extended and 'BB_Lower' in extended:
         upper = float(extended['BB_Upper'].iloc[-1])
         if curr_price > upper:
-            insights.append("🔥 **Price Breakout**: Trading above upper Bollinger Band — high momentum.")
+            insights.append("🔥 <b>Price Breakout</b>: Trading above upper Bollinger Band — high momentum.")
 
     return insights[:3] # Return top 3 most relevant insights

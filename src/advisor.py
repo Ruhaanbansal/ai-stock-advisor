@@ -164,41 +164,41 @@ def generate_ai_reasoning(
 
     # Price signal
     if price_change > 2:
-        reasons.append(f"📈 AI model projects a strong upside of **{price_change:+.2f}%** — bullish momentum signal.")
+        reasons.append(f"📈 AI model projects a strong upside of <b>{price_change:+.2f}%</b> — bullish momentum signal.")
     elif price_change > 0:
-        reasons.append(f"📈 AI model forecasts a modest gain of **{price_change:+.2f}%**.")
+        reasons.append(f"📈 AI model forecasts a modest gain of <b>{price_change:+.2f}%</b>.")
     elif price_change > -2:
-        reasons.append(f"📉 AI model expects a slight decline of **{price_change:.2f}%** — watch for reversal.")
+        reasons.append(f"📉 AI model expects a slight decline of <b>{price_change:.2f}%</b> — watch for reversal.")
     else:
-        reasons.append(f"📉 AI model projects a significant drop of **{price_change:.2f}%** — exercise caution.")
+        reasons.append(f"📉 AI model projects a significant drop of <b>{price_change:.2f}%</b> — exercise caution.")
 
     # Sentiment signal
     if sentiment_score > 0.2:
-        reasons.append("📰 News sentiment is **Bullish** — positive news flow supports the outlook.")
+        reasons.append("📰 News sentiment is <b>Bullish</b> — positive news flow supports the outlook.")
     elif sentiment_score < -0.2:
-        reasons.append("📰 News sentiment is **Bearish** — negative headlines add downside risk.")
+        reasons.append("📰 News sentiment is <b>Bearish</b> — negative headlines add downside risk.")
     else:
-        reasons.append("📰 News sentiment is **Neutral** — no strong macro tailwinds or headwinds.")
+        reasons.append("📰 News sentiment is <b>Neutral</b> — no strong macro tailwinds or headwinds.")
 
     # RSI signal
     if rsi is not None:
         if rsi < 30:
-            reasons.append(f"⚡ RSI at **{rsi:.1f}** — stock is in oversold territory, potential rebound signal.")
+            reasons.append(f"⚡ RSI at <b>{rsi:.1f}</b> — stock is in oversold territory, potential rebound signal.")
         elif rsi > 70:
-            reasons.append(f"⚡ RSI at **{rsi:.1f}** — stock is overbought, elevated reversal risk.")
+            reasons.append(f"⚡ RSI at <b>{rsi:.1f}</b> — stock is overbought, elevated reversal risk.")
         else:
-            reasons.append(f"⚡ RSI at **{rsi:.1f}** — neutral momentum, no extremes detected.")
+            reasons.append(f"⚡ RSI at <b>{rsi:.1f}</b> — neutral momentum, no extremes detected.")
 
     # MACD signal
     if macd_diff is not None:
         if macd_diff > 0:
-            reasons.append("📊 MACD is **above** signal line — bullish crossover confirms upward momentum.")
+            reasons.append("📊 MACD is <b>above</b> signal line — bullish crossover confirms upward momentum.")
         else:
-            reasons.append("📊 MACD is **below** signal line — bearish crossover, momentum is weakening.")
+            reasons.append("📊 MACD is <b>below</b> signal line — bearish crossover, momentum is weakening.")
 
     # Volatility / Risk
     if volatility < LOW_RISK_THRESHOLD:
-        reasons.append(f"🛡️ Annualised volatility {volatility:.1%} is **low** — price is behaving predictably.")
+        reasons.append(f"🛡️ Annualised volatility {volatility:.1%} is <b>low</b> — price is behaving predictably.")
     elif volatility < HIGH_RISK_THRESHOLD:
         reasons.append(f"⚠️ Moderate volatility {volatility:.1%} — suitable for medium-risk investors.")
     else:

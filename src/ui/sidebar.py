@@ -70,7 +70,7 @@ def show_sidebar(status="live"):
                         st.rerun()
             
             if st.session_state.get("compare_ticker"):
-                st.info(f"Comparing: **{st.session_state.compare_name}**")
+                st.info(f"Comparing: <b>{st.session_state.compare_name}</b>")
                 if st.button("❌ Clear Comparison"):
                     st.session_state.compare_ticker = None
                     st.rerun()

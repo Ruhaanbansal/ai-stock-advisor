@@ -62,4 +62,4 @@ def show_analyzer_page():
             
             # Final Verdict
             st.markdown("---")
-            st.info(f"**Final Verdict:** {analysis.get('summary', 'No summary available.')}")
+            st.info(f"<b>Final Verdict:</b> {analysis.get('summary', 'No summary available.')}")
