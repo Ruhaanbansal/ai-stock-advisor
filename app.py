@@ -410,19 +410,21 @@ close_prices = None
 if page not in _STOCK_FREE_PAGES:
     stock = st.session_state.selected_stock
     
-    with st.status("📊 Fetching market data...", expanded=True) as status:
-        import logging
-        logging.basicConfig(level=logging.INFO)
-        data = load_stock_data(stock, period=period)
-        
-        # Load comparison data if selected
-        compare_data = None
-        if st.session_state.get("compare_ticker"):
-            st.write(f"Fetching comparison data for {st.session_state.compare_ticker}...")
-            compare_data = load_stock_data(st.session_state.compare_ticker, period=period)
-        
-        status.update(label="✅ Market Data Loaded", state="complete", expanded=False)
-
+    load_status = st.empty()
+    with load_status.container():
+        with st.status("📊 Fetching market data...", expanded=True) as status:
+            import logging
+            logging.basicConfig(level=logging.INFO)
+            data = load_stock_data(stock, period=period)
+            
+            # Load comparison data if selected
+            compare_data = None
+            if st.session_state.get("compare_ticker"):
+                st.write(f"Fetching comparison data for {st.session_state.compare_ticker}...")
+                compare_data = load_stock_data(st.session_state.compare_ticker, period=period)
+            
+            status.update(label="✅ Market Data Loaded", state="complete", expanded=False)
+    
     if data is None or data.empty:
         st.error(
             f"⚠️ Could not load data for **{st.session_state.get('selected_stock_name', stock)}** "
@@ -460,32 +462,36 @@ sentiment_score = sentiment_label = headlines = sentiment_source = None
 risk_metrics = volatility = sharpe_ratio = max_drawdown = advisor = None
 
 if page not in _STOCK_FREE_PAGES:
-    with st.status("🧠 Initializing AI Engine...", expanded=True) as status:
-        cp_hash = hash(close_prices.values.tobytes())
-        model, scaler, last_sequence, train_mae, test_mae = train_lstm_model(st.session_state.selected_stock, cp_hash, close_prices)
-        status.update(label="✅ AI Engine Ready", state="complete", expanded=False)
+    with load_status.container():
+        with st.status("🧠 Initializing AI Engine...", expanded=True) as status:
+            cp_hash = hash(close_prices.values.tobytes())
+            model, scaler, last_sequence, train_mae, test_mae = train_lstm_model(st.session_state.selected_stock, cp_hash, close_prices)
+            status.update(label="✅ AI Engine Ready", state="complete", expanded=False)
 
-    predicted_price = predict_next_price(model, scaler, last_sequence)
-    current_price   = float(close_prices.iloc[-1])
-    forecast_5d     = forecast_prices(model, scaler, last_sequence, days=5)
+        predicted_price = predict_next_price(model, scaler, last_sequence)
+        current_price   = float(close_prices.iloc[-1])
+        forecast_5d     = forecast_prices(model, scaler, last_sequence, days=5)
 
-    with st.status("🔍 Deep Intelligence Analysis...", expanded=True) as status:
-        st.write("Fetching news & calculating sentiment...")
-        _sent = analyse_sentiment(st.session_state.selected_stock, company_name=st.session_state.get("selected_stock_name"))
-        sentiment_score  = _sent["score"]
-        sentiment_label  = _sent["label"]
-        articles         = _sent["articles"]
-        headlines        = [a["title"] for a in articles]
-        sentiment_source = _sent["model"]
+        with st.status("🔍 Deep Intelligence Analysis...", expanded=True) as status:
+            st.write("Fetching news & calculating sentiment...")
+            _sent = analyse_sentiment(st.session_state.selected_stock, company_name=st.session_state.get("selected_stock_name"))
+            sentiment_score  = _sent["score"]
+            sentiment_label  = _sent["label"]
+            articles         = _sent["articles"]
+            headlines        = [a["title"] for a in articles]
+            sentiment_source = _sent["model"]
 
-        st.write("Calculating multi-factor risk metrics...")
-        # Risk metrics expect returns, not absolute prices
-        risk_metrics = calculate_risk_metrics(
-            close_prices.pct_change().dropna(),
-            stock_ticker=st.session_state.selected_stock,
-            period=period
-        )
-        status.update(label="✅ Analysis Complete", state="complete", expanded=False)
+            st.write("Calculating multi-factor risk metrics...")
+            # Risk metrics expect returns, not absolute prices
+            risk_metrics = calculate_risk_metrics(
+                close_prices.pct_change().dropna(),
+                stock_ticker=st.session_state.selected_stock,
+                period=period
+            )
+            status.update(label="✅ Analysis Complete", state="complete", expanded=False)
+    
+    # Hide all loading indicators now that everything is ready
+    load_status.empty()
 
     volatility   = risk_metrics.get("volatility", 0.0)
     sharpe_ratio = risk_metrics.get("sharpe", 0.0)
