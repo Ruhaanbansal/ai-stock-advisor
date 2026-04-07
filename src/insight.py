@@ -2,6 +2,8 @@
 # insight.py — Narrative Investment Insight Generator
 # =============================================================
 
+import pandas as pd
+import numpy as np
 from src.config import LOW_RISK_THRESHOLD, HIGH_RISK_THRESHOLD
 
 
