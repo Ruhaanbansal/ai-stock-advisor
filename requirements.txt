@@ -18,6 +18,9 @@ scipy>=1.10.0
 # ── NLP & Sentiment ───────────────────────────────────────────
 vaderSentiment>=3.3.2
 newsapi-python>=0.2.7
+nltk>=3.8.1
+transformers>=4.30.0
+torch>=2.0.0
 
 # ── Visualisation ─────────────────────────────────────────────
 plotly>=5.15.0
@@ -28,3 +31,7 @@ python-dotenv>=1.0.0
 anthropic>=0.25.0
 Pillow>=10.0.0
 pandas-datareader>=0.10.0
+
+# ── Deployment Helpers ───────────────────────────────────────
+lxml>=4.9.0
+beautifulsoup4>=4.12.0

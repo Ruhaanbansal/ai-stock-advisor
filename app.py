@@ -8,8 +8,12 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 import os
+import sys
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+
+# Ensure the root directory is in the Python path for robust imports on Streamlit Cloud
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Load API keys from .env file
 load_dotenv()
@@ -261,19 +265,40 @@ with st.sidebar:
             st.session_state.selected_stock_name = STOCK_LABELS.get(ticker, ticker)
             st.rerun()
 
-    # ── Currently selected ────────────────────────────────────
-    stock = st.session_state.get("selected_stock") or "RELIANCE.NS"
+    st.markdown("---")
 
+    # ── Compare Stock ──────────────────────────────────────────
     st.markdown(
-        f"<div style='background:#111520;border:1px solid #1e2538;border-radius:8px;"
-        f"padding:8px 12px;margin-top:10px'>"
-        f"<div style='font-size:10px;color:#7a8299'>ANALYSING</div>"
-        f"<div style='font-size:14px;font-weight:600;color:#00d4aa'>"
-        f"{st.session_state.selected_stock_name}</div>"
-        f"<div style='font-size:11px;color:#7a8299'>{stock}</div>"
-        f"</div>",
+        "<div style='font-size:12px;color:#7a8299;margin-bottom:6px'>📊 COMPARE WITH ANOTHER STOCK</div>",
         unsafe_allow_html=True
     )
+    
+    if "compare_ticker" not in st.session_state:
+        st.session_state.compare_ticker = None
+        st.session_state.compare_name   = None
+
+    compare_query = st.text_input(
+        "Compare",
+        placeholder="e.g. TCS, INFY, ICICIBANK...",
+        label_visibility="collapsed",
+        key="compare_input"
+    )
+
+    if compare_query and len(compare_query) >= 2:
+        comp_suggestions = get_suggestions(compare_query, max_results=3)
+        if comp_suggestions:
+            for idx, s in enumerate(comp_suggestions):
+                if st.button(f"Compare: {s['name']}", key=f"comp_sug_{idx}"):
+                    st.session_state.compare_ticker = s["ticker"]
+                    st.session_state.compare_name   = s["name"]
+                    st.rerun()
+
+    if st.session_state.compare_ticker:
+        st.info(f"Comparing with: **{st.session_state.compare_name}**")
+        if st.button("❌ Remove Comparison"):
+            st.session_state.compare_ticker = None
+            st.session_state.compare_name   = None
+            st.rerun()
 
     st.markdown("---")
 
@@ -294,13 +319,13 @@ with st.sidebar:
     periods_r2 = [("10Y", "10y"), ("15Y", "15y"), ("30Y", "30y")]
     
     for i, (label, val) in enumerate(periods_r1):
-        if p_row1[i].button(label, key=f"p_{val}", use_container_width=True,
+        if p_row1[i].button(label, key=f"p_{val}",
                              type="primary" if st.session_state.period == val else "secondary"):
             st.session_state.period = val
             st.rerun()
             
     for i, (label, val) in enumerate(periods_r2):
-        if p_row2[i].button(label, key=f"p_{val}", use_container_width=True,
+        if p_row2[i].button(label, key=f"p_{val}",
                              type="primary" if st.session_state.period == val else "secondary"):
             st.session_state.period = val
             st.rerun()
@@ -367,7 +392,7 @@ if st.session_state.get("selected_stock") is None and page not in _STOCK_FREE_PA
     qcols = st.columns(len(STOCK_LIST))
     for i, ticker in enumerate(STOCK_LIST):
         label = STOCK_LABELS.get(ticker, ticker).split()[0]
-        if qcols[i].button(label, key=f"welcome_{i}_{ticker.replace('.','_')}", width="stretch"):
+        if qcols[i].button(label, key=f"welcome_{i}_{ticker.replace('.','_')}"):
             st.session_state.selected_stock      = ticker
             st.session_state.selected_stock_name = STOCK_LABELS.get(ticker, ticker)
             st.rerun()
@@ -383,10 +408,20 @@ data         = None
 close_prices = None
 
 if page not in _STOCK_FREE_PAGES:
-    with st.spinner("Fetching market data…"):
+    stock = st.session_state.selected_stock
+    
+    with st.status("📊 Fetching market data...", expanded=True) as status:
         import logging
         logging.basicConfig(level=logging.INFO)
         data = load_stock_data(stock, period=period)
+        
+        # Load comparison data if selected
+        compare_data = None
+        if st.session_state.get("compare_ticker"):
+            st.write(f"Fetching comparison data for {st.session_state.compare_ticker}...")
+            compare_data = load_stock_data(st.session_state.compare_ticker, period=period)
+        
+        status.update(label="✅ Market Data Loaded", state="complete", expanded=False)
 
     if data is None or data.empty:
         st.error(
@@ -425,28 +460,32 @@ sentiment_score = sentiment_label = headlines = sentiment_source = None
 risk_metrics = volatility = sharpe_ratio = max_drawdown = advisor = None
 
 if page not in _STOCK_FREE_PAGES:
-    with st.spinner("Loading AI model…"):
+    with st.status("🧠 Initializing AI Engine...", expanded=True) as status:
         cp_hash = hash(close_prices.values.tobytes())
-        model, scaler, last_sequence, train_mae, test_mae = train_lstm_model(stock, cp_hash, close_prices)
+        model, scaler, last_sequence, train_mae, test_mae = train_lstm_model(st.session_state.selected_stock, cp_hash, close_prices)
+        status.update(label="✅ AI Engine Ready", state="complete", expanded=False)
 
     predicted_price = predict_next_price(model, scaler, last_sequence)
     current_price   = float(close_prices.iloc[-1])
     forecast_5d     = forecast_prices(model, scaler, last_sequence, days=5)
 
-    with st.spinner("Analysing sentiment & risk…"):
-        _sent = analyse_sentiment(stock, company_name=st.session_state.get("selected_stock_name"))
+    with st.status("🔍 Deep Intelligence Analysis...", expanded=True) as status:
+        st.write("Fetching news & calculating sentiment...")
+        _sent = analyse_sentiment(st.session_state.selected_stock, company_name=st.session_state.get("selected_stock_name"))
         sentiment_score  = _sent["score"]
         sentiment_label  = _sent["label"]
         articles         = _sent["articles"]
         headlines        = [a["title"] for a in articles]
         sentiment_source = _sent["model"]
 
+        st.write("Calculating multi-factor risk metrics...")
         # Risk metrics expect returns, not absolute prices
         risk_metrics = calculate_risk_metrics(
             close_prices.pct_change().dropna(),
-            stock_ticker=stock,
+            stock_ticker=st.session_state.selected_stock,
             period=period
         )
+        status.update(label="✅ Analysis Complete", state="complete", expanded=False)
 
     volatility   = risk_metrics.get("volatility", 0.0)
     sharpe_ratio = risk_metrics.get("sharpe", 0.0)
@@ -464,8 +503,8 @@ if page not in _STOCK_FREE_PAGES:
 # ══════════════════════════════════════════════════════════════
 
 if page not in _STOCK_FREE_PAGES:
-    st.markdown(f"## {STOCK_LABELS.get(stock, stock)}")
-    st.caption(f"`{stock}` · {period} view · Prices in ₹")
+    st.markdown(f"## {STOCK_LABELS.get(st.session_state.selected_stock, st.session_state.selected_stock)}")
+    st.caption(f"`{st.session_state.selected_stock}` · {period} view · Prices in ₹")
 
     k1, k2, k3, k4, k5 = st.columns(5)
     price_delta = f"{advisor['price_change']:+.2f}%"
@@ -548,7 +587,56 @@ if page == "📊 Dashboard":
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
+
+        # Volume chart
+        if "Volume" in data.columns:
+            st.subheader("Trading Volume")
+            vol_fig = go.Figure(go.Bar(
+                x=data.index, y=data["Volume"],
+                marker_color="rgba(122, 130, 153, 0.3)",
+                name="Volume"
+            ))
+            vol_fig.update_layout(template="plotly_dark", height=200, margin=dict(l=0,r=0,t=0,b=0))
+            st.plotly_chart(vol_fig, width="stretch")
+
+        # ── Comparison Chart (if active) ──────────────────────────
+        if st.session_state.get("compare_ticker"):
+            st.markdown("---")
+            st.subheader(f"📊 Relative Performance: {stock} vs {st.session_state.compare_ticker}")
+            
+            with st.status("Fetching comparison data...", expanded=False):
+                comp_data = load_stock_data(st.session_state.compare_ticker, period=period)
+            
+            if not comp_data.empty:
+                c_close = get_close_prices(comp_data)
+                
+                # Re-index to match primary data dates
+                c_close = c_close.reindex(close_prices.index, method='ffill')
+                
+                # Normalize to 0% at start
+                norm_main = ((close_prices / close_prices.iloc[0]) - 1) * 100
+                norm_comp = ((c_close / c_close.iloc[0]) - 1) * 100
+                
+                fig_comp = go.Figure()
+                fig_comp.add_trace(go.Scatter(
+                    x=norm_main.index, y=norm_main, name=stock,
+                    line=dict(color="#00d4aa", width=2)
+                ))
+                fig_comp.add_trace(go.Scatter(
+                    x=norm_comp.index, y=norm_comp, name=st.session_state.compare_ticker,
+                    line=dict(color="#6c63ff", width=2)
+                ))
+                
+                fig_comp.update_layout(
+                    template="plotly_dark", height=400,
+                    yaxis_title="Percent Change (%)",
+                    hovermode="x unified",
+                    margin=dict(l=0,r=0,t=20,b=0),
+                    legend=dict(orientation="h", y=1.1)
+                )
+                st.plotly_chart(fig_comp, width="stretch")
+                st.caption("Performance is normalized to 0% at the beginning of the period.")
 
     with bb_tab:
         if "BB_Upper" in extended:
@@ -668,7 +756,7 @@ elif page == "🧠 AI Prediction":
             margin=dict(l=40, r=40, t=20, b=20),
             paper_bgcolor="rgba(0,0,0,0)",
         )
-        st.plotly_chart(radar_fig, use_container_width=True)
+        st.plotly_chart(radar_fig, width='stretch')
 
     st.markdown("---")
 
@@ -677,7 +765,7 @@ elif page == "🧠 AI Prediction":
     with col_l:
         st.markdown("### 🔍 Model Explainability")
         imp = compute_feature_importance(model, scaler, close_prices)
-        st.plotly_chart(shap_chart(imp), use_container_width=True)
+        st.plotly_chart(shap_chart(imp), width='stretch')
         
         # Technical Signal Capsules (Symmetric Grid)
         signals = get_technical_signals(close_prices)
@@ -751,7 +839,7 @@ elif page == "📰 Market Intelligence":
     with news_l:
         header_col1, header_col2 = st.columns([1, 1])
         header_col1.markdown("#### 📰 Latest Intelligence")
-        if header_col2.button("🔄 Refresh News", key="refresh_news_btn", use_container_width=True):
+        if header_col2.button("🔄 Refresh News", key="refresh_news_btn", width='stretch'):
             st.cache_data.clear()
             st.rerun()
         if not articles:
@@ -815,7 +903,7 @@ elif page == "📰 Market Intelligence":
                 paper_bgcolor="rgba(0,0,0,0)",
                 plot_bgcolor="rgba(0,0,0,0)",
             )
-            st.plotly_chart(rsi_fig, use_container_width=True)
+            st.plotly_chart(rsi_fig, width='stretch')
             
             st.markdown(f"""
             <div style="background:var(--surface);border-radius:10px;padding:16px;border:1px solid var(--border)">
@@ -1027,7 +1115,7 @@ elif page == "💼 Portfolio Optimizer":
 
     c1, c2 = st.columns([1.2, 1])
     with c1:
-        st.plotly_chart(pie_fig, use_container_width=True)
+        st.plotly_chart(pie_fig, width='stretch')
     with c2:
         st.markdown("**Allocation Breakdown**")
         # Rename Stock column to readable name for display
@@ -1043,7 +1131,7 @@ elif page == "💼 Portfolio Optimizer":
                 "Volatility (%)":  "{:.2f}%",
                 "Sharpe":          "{:.2f}",
             }).background_gradient(subset=["Weight (%)"], cmap="Greens"),
-            use_container_width=True,
+            width='stretch',
             hide_index=True,
         )
 
@@ -1059,7 +1147,7 @@ elif page == "💼 Portfolio Optimizer":
         labels={"Sharpe": "Sharpe Ratio"},
     )
     ef_fig.update_layout(template="plotly_dark", margin=dict(l=0,r=0,t=10,b=0))
-    st.plotly_chart(ef_fig, use_container_width=True)
+    st.plotly_chart(ef_fig, width='stretch')
 
     # Correlation heatmap
     st.markdown("#### Correlation Matrix")
@@ -1100,11 +1188,11 @@ elif page == "🔁 Backtesting":
         legend=dict(orientation="h", y=1.05),
         margin=dict(l=0,r=0,t=10,b=0),
     )
-    st.plotly_chart(bt_fig, use_container_width=True)
+    st.plotly_chart(bt_fig, width='stretch')
 
     # Drawdown chart
     from src.backtest import build_drawdown_fig, build_monthly_heatmap
-    st.plotly_chart(build_drawdown_fig(comparison), use_container_width=True)
+    st.plotly_chart(build_drawdown_fig(comparison), width='stretch')
 
     # Metrics table
     st.markdown("#### Strategy Performance")
@@ -1117,12 +1205,12 @@ elif page == "🔁 Backtesting":
             "Sharpe Ratio": f"{m['sharpe_ratio']:.3f}",
             "Win Rate":     f"{m['win_rate']:.1f}%",
         })
-    st.dataframe(pd.DataFrame(rows).set_index("Strategy"), use_container_width=True)
+    st.dataframe(pd.DataFrame(rows).set_index("Strategy"), width='stretch')
 
     # Monthly heatmap for AI Strategy
     if "AI Strategy" in comparison.columns:
         st.markdown("#### AI Strategy Monthly Returns")
-        st.plotly_chart(build_monthly_heatmap(comparison["AI Strategy"], "AI Strategy"), use_container_width=True)
+        st.plotly_chart(build_monthly_heatmap(comparison["AI Strategy"], "AI Strategy"), width='stretch')
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1147,7 +1235,7 @@ elif page == "🔬 Model Evaluation":
 
     # Residuals
     st.markdown("#### Prediction Residuals")
-    st.plotly_chart(evaluation["residual_chart"], use_container_width=True)
+    st.plotly_chart(evaluation["residual_chart"], width='stretch')
     
     actual      = evaluation["actual"]
     predictions = evaluation["predictions"]
@@ -1503,7 +1591,7 @@ elif page == "📡 FII/DII Tracker":
                         continue
                 if rows:
                     st.dataframe(pd.DataFrame(rows), hide_index=True,
-                                 use_container_width=True)
+                                 width='stretch')
         else:
             # Fallback to last 10 rows of historical data
             st.info("💡 Live NSE data temporarily unavailable — showing latest historical data. NSE publishes data after market close (3:30 PM IST) on trading days.")
@@ -1552,7 +1640,7 @@ elif page == "📡 FII/DII Tracker":
                 "FII Net (₹Cr)":  "{:,.0f}",
                 "DII Net (₹Cr)":  "{:,.0f}",
                 "Combined (₹Cr)": "{:,.0f}",
-            }), hide_index=True, use_container_width=True)
+            }), hide_index=True, width='stretch')
 
         # ── Correlation stats ─────────────────────────────────
         st.markdown("<br>**FII/DII → NIFTY Correlations**", unsafe_allow_html=True)
@@ -1614,7 +1702,7 @@ elif page == "📡 FII/DII Tracker":
             legend=dict(orientation="h", y=1.05),
             margin=dict(l=40, r=40, t=30, b=40),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
 
         # 30-day rolling FII net
         st.markdown("#### Rolling 30-Day FII Net Flow")
@@ -1635,7 +1723,7 @@ elif page == "📡 FII/DII Tracker":
             margin=dict(l=40, r=20, t=20, b=30),
             yaxis_title="₹ Crores (30-day sum)",
         )
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, width='stretch')
 
     # ══════════════════════════════════════════════════════════
     # TAB 3 — PATTERNS
@@ -1789,7 +1877,7 @@ elif page == "📡 FII/DII Tracker":
                         "NIFTY Return %":   "{:.2f}%",
                     }),
                     hide_index=True,
-                    use_container_width=True,
+                    width='stretch',
                 )
 
             # Disclaimer
@@ -1855,7 +1943,7 @@ elif page == "📸 Chart Analyzer":
     if uploaded:
         # Show uploaded image
         st.image(uploaded, caption=f"Uploaded: {uploaded.name}",
-                 use_container_width=True)
+                 width='stretch')
 
         st.markdown("<br>", unsafe_allow_html=True)
         analyse_btn = st.button("🔍 Analyse Chart", type="primary")
