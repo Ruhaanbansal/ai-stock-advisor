@@ -11,7 +11,6 @@ import os
 import sys
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-import traceback
 
 # Ensure the root directory is in the Python path for robust imports on Streamlit Cloud
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -44,13 +43,9 @@ from src.backtest     import run_backtest
 from src.evaluation   import evaluate_model
 from src.advisor      import run_ai_advisor
 from src.alerts       import detect_market_alerts
-try:
-    from src.insight      import generate_ai_insight, generate_chart_insights
-except Exception as e:
-    st.error("🚨 IMPORT ERROR IN src.insight DETECTED")
-    st.code(traceback.format_exc())
-    st.stop()
-from src.ui.components  import show_brand, show_status_heartbeat, show_insight
+from src.insight      import generate_ai_insight, generate_chart_insights
+from src.ui.components  import (show_brand, show_status_heartbeat, show_insight,
+                                 get_base64_bin_file)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -352,7 +347,10 @@ with st.sidebar:
 
     # 5. Heartbeat Status
     show_status_heartbeat(status=_sys_status)
-    st.sidebar.caption(f"Last updated: {datetime.now().strftime('%H:%M:%S IST')}")
+    
+    # Correct for IST (UTC + 5.5) as Streamlit Cloud servers run on UTC
+    ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+    st.sidebar.caption(f"Last updated: {ist_now.strftime('%H:%M:%S IST')}")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -362,9 +360,16 @@ with st.sidebar:
 _STOCK_FREE_PAGES = {"🚀 IPO Predictor", "📡 FII/DII Tracker", "📸 Chart Analyzer", "💼 Portfolio Optimizer"}
 
 if st.session_state.get("selected_stock") is None and page not in _STOCK_FREE_PAGES:
-    st.markdown("""
+    # Get base64 logo for the hero section
+    logo_path = os.path.join("assets", "logo.svg")
+    logo_html = "🧠" # Fallback
+    if os.path.exists(logo_path):
+        logo_base64 = get_base64_bin_file(logo_path)
+        logo_html = f'<img src="data:image/svg+xml;base64,{logo_base64}" width="80" height="80" style="margin-bottom:16px">'
+
+    st.markdown(f"""
     <div style='text-align:center;padding:60px 20px 30px'>
-        <div style='font-size:56px;margin-bottom:16px'>🧠</div>
+        <div style='display:flex;justify-content:center'>{logo_html}</div>
         <h1 style='font-size:2.4rem;font-weight:700;
                    background:linear-gradient(135deg,#00d4aa,#6c63ff);
                    -webkit-background-clip:text;-webkit-text-fill-color:transparent;

@@ -1,5 +1,5 @@
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timedelta
 from src.config import STOCK_LIST, STOCK_LABELS
 from src.stock_search import resolve_ticker, get_suggestions
 from src.dataloader import load_stock_data
@@ -106,6 +106,9 @@ def show_sidebar(status="live"):
 
         # 5. Heartbeat Status
         show_status_heartbeat(status=status)
-        st.sidebar.caption(f"Last updated: {datetime.now().strftime('%H:%M:%S IST')}")
+        
+        # Correct for IST (UTC + 5.5) as Streamlit Cloud servers run on UTC
+        ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+        st.sidebar.caption(f"Last updated: {ist_now.strftime('%H:%M:%S IST')}")
         
         return page
