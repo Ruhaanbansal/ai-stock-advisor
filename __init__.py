@@ -1,1 +1,0 @@
-# NiftyMind Root Package

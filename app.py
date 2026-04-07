@@ -43,7 +43,8 @@ from src.backtest     import run_backtest
 from src.evaluation   import evaluate_model
 from src.advisor      import run_ai_advisor
 from src.alerts       import detect_market_alerts
-from src.insight      import generate_ai_insight
+from src.insight      import generate_ai_insight, generate_chart_insights
+from src.ui.components  import show_brand, show_status_heartbeat, show_insight
 
 
 # ══════════════════════════════════════════════════════════════
@@ -178,16 +179,8 @@ hr { border-color: var(--border) !important; margin: 24px 0; }
 # ══════════════════════════════════════════════════════════════
 
 with st.sidebar:
-    st.markdown("""
-    <div style="padding:12px 0 20px">
-      <span style="font-family:'Space Grotesk',sans-serif;font-size:22px;font-weight:700;color:#00d4aa">
-        NiftyMind
-      </span>
-      <span style="font-size:11px;color:#7a8299;display:block;margin-top:2px">
-        AI-Powered Indian Stock Intelligence
-      </span>
-    </div>
-    """, unsafe_allow_html=True)
+    # 1. Branding
+    show_brand()
 
     page = st.radio(
         "Navigate",
@@ -333,7 +326,27 @@ with st.sidebar:
     period = st.session_state.period
 
     st.markdown("---")
-    st.caption(f"Last updated: {datetime.now().strftime('%d %b %Y, %H:%M')}")
+
+    # 4. Data Governance
+    with st.sidebar.expander("🛡️ DATA GOVERNANCE"):
+        st.markdown(f"""
+        <div style="font-size: 11px; color: #7a8299; line-height: 1.6;">
+        <b>PRICE DATA</b>: Yahoo Finance & Stooq (EOD / 15m Delayed)<br>
+        <b>SENTIMENT</b>: NewsAPI.org & yfinance Headlines<br>
+        <b>ANALYTICS</b>: AI Inference on {st.session_state.get('period', '1y')} window<br>
+        <b>FII/DII</b>: NSE India Official Disclosure
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # Determine system status
+    _sys_status = "live"
+    if st.session_state.get("data_source") == "Alpha Vantage": _sys_status = "delayed"
+
+    # 5. Heartbeat Status
+    show_status_heartbeat(status=_sys_status)
+    st.sidebar.caption(f"Last updated: {datetime.now().strftime('%H:%M:%S IST')}")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -514,11 +527,11 @@ if page not in _STOCK_FREE_PAGES:
 
     k1, k2, k3, k4, k5 = st.columns(5)
     price_delta = f"{advisor['price_change']:+.2f}%"
-    k1.metric("Current Price",   f"₹{current_price:,.2f}")
-    k2.metric("AI Predicted",    f"₹{predicted_price:,.2f}", price_delta)
-    k3.metric("Sentiment",       sentiment_label)
-    k4.metric("Risk",            advisor["risk"])
-    k5.metric("Recommendation",  advisor["recommendation"])
+    k1.metric("Current Price",   f"₹{current_price:,.2f}", help="The latest closing price fetched from various data sources.")
+    k2.metric("AI Predicted",    f"₹{predicted_price:,.2f}", price_delta, help="Next-day price predicted by our LSTM model. The delta shows projected movement.")
+    k3.metric("Sentiment",       sentiment_label, help="Combined news sentiment score from VADER and news headlines.")
+    k4.metric("Risk",            advisor["risk"], help="Multi-factor risk assessment based on volatility and drawdowns.")
+    k5.metric("Recommendation",  advisor["recommendation"], help="Final AI signal integrating price, technicals, and sentiment.")
 
     st.markdown("---")
 
@@ -558,6 +571,29 @@ if page == "📊 Dashboard":
             hoverinfo="x+y",
         ))
 
+        # ── News Overlay ─────────────────────────────────────────
+        if articles:
+            news_dates = []
+            news_prices = []
+            news_texts = []
+            
+            for art in articles[:15]: # Max 15 markers
+                try:
+                    dt = pd.to_datetime(art['publishedAt']).tz_localize(None).normalize()
+                    if dt in close_prices.index:
+                        news_dates.append(dt)
+                        news_prices.append(close_prices.loc[dt])
+                        news_texts.append(f"<b>{art['source']}</b>: {art['title'][:60]}...")
+                except: continue
+            
+            if news_dates:
+                fig.add_trace(go.Scatter(
+                    x=news_dates, y=news_prices,
+                    mode='markers', name='News Markers',
+                    marker=dict(symbol='diamond', size=10, color='#6C63FF', line=dict(width=1, color='white')),
+                    text=news_texts, hoverinfo='text'
+                ))
+
         # Thinner SMAs with coordinated colors
         if "SMA20" in extended:
             fig.add_trace(go.Scatter(
@@ -595,9 +631,14 @@ if page == "📊 Dashboard":
         )
         st.plotly_chart(fig, width="stretch")
 
+        # ── AI Insights Snackbars ────────────────────────────────
+        chart_insights = generate_chart_insights(data, extended)
+        for insight_text in chart_insights:
+            show_insight(insight_text)
+
         # Volume chart
         if "Volume" in data.columns:
-            st.subheader("Trading Volume")
+            st.subheader("Trading Volume", help="Daily trading volume. Massive spikes often indicate institutional entry or exit.")
             vol_fig = go.Figure(go.Bar(
                 x=data.index, y=data["Volume"],
                 marker_color="rgba(122, 130, 153, 0.3)",
@@ -645,6 +686,7 @@ if page == "📊 Dashboard":
                 st.caption("Performance is normalized to 0% at the beginning of the period.")
 
     with bb_tab:
+        st.subheader("Bollinger Bands", help="Measures market volatility. Price near the upper band suggests overbought conditions; near the lower band suggests oversold.")
         if "BB_Upper" in extended:
             fig2 = go.Figure()
             fig2.add_trace(go.Scatter(x=extended.index, y=extended["BB_Upper"],
@@ -663,6 +705,7 @@ if page == "📊 Dashboard":
             st.info("Not enough data for Bollinger Bands.")
 
     with macd_tab:
+        st.subheader("MACD (Moving Average Convergence Divergence)", help="A trend-following momentum indicator. Crossovers between the MACD and Signal line indicate potential buy/sell signals.")
         if "MACD" in extended:
             fig3 = go.Figure()
             macd_hist = extended["MACD"] - extended["MACD_Signal"]
@@ -679,7 +722,7 @@ if page == "📊 Dashboard":
             st.info("Not enough data for MACD.")
 
     # 5-day forecast strip
-    st.subheader("5-Day Price Forecast")
+    st.subheader("5-Day Price Forecast", help="AI-generated projections for the next 5 trading days based on the LSTM model's inference.")
     today  = datetime.today()
     fdates = [(today + timedelta(days=i+1)).strftime("%a %d %b") for i in range(5)]
     fcols  = st.columns(5)
@@ -687,16 +730,6 @@ if page == "📊 Dashboard":
         delta = ((p - current_price) / current_price) * 100
         fcols[i].metric(d, f"₹{p:,.2f}", f"{delta:+.2f}%")
 
-    # Volume chart
-    if "Volume" in data.columns:
-        st.subheader("Trading Volume")
-        vol_fig = go.Figure(go.Bar(
-            x=data.index, y=data["Volume"],
-            marker_color="#6c63ff", opacity=0.7,
-        ))
-        vol_fig.update_layout(template="plotly_dark", height=200,
-                               margin=dict(l=0,r=0,t=10,b=0))
-        st.plotly_chart(vol_fig, width='stretch')
 
 
 # ─────────────────────────────────────────────────────────────
