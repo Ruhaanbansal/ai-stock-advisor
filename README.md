@@ -95,7 +95,7 @@ The core ML feature of the app. Given a stock's historical close prices, the mod
 4. Iteratively auto-regresses to produce a **5-day price forecast**
 
 **Output:**
-- Predicted next-day price with % change from current
+- Predicted next-day price with % change from current price
 - 5-day forecast chart overlaid on historical prices
 - Confidence interval derived from cross-validation MAE
 - Feature importance chart — which lagged prices and rolling statistics drove the prediction
