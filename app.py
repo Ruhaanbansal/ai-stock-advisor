@@ -11,6 +11,7 @@ import os
 import sys
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+import traceback
 
 # Ensure the root directory is in the Python path for robust imports on Streamlit Cloud
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -43,7 +44,12 @@ from src.backtest     import run_backtest
 from src.evaluation   import evaluate_model
 from src.advisor      import run_ai_advisor
 from src.alerts       import detect_market_alerts
-from src.insight      import generate_ai_insight, generate_chart_insights
+try:
+    from src.insight      import generate_ai_insight, generate_chart_insights
+except Exception as e:
+    st.error("🚨 IMPORT ERROR IN src.insight DETECTED")
+    st.code(traceback.format_exc())
+    st.stop()
 from src.ui.components  import show_brand, show_status_heartbeat, show_insight
 
 
